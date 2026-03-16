@@ -1,0 +1,30 @@
+# Environment & secrets
+.env
+
+# Database
+db/newsfeed.db
+accounts.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# Logs
+logs/*.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (frontend)
+frontend/node_modules/
+frontend/dist/
+frontend/.env

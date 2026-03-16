@@ -1,0 +1,18 @@
+# Core
+python-dotenv>=1.0.0
+
+# Extractors
+feedparser>=6.0.0
+praw>=7.7.0
+google-api-python-client>=2.100.0
+youtube-transcript-api>=0.6.0
+twscrape>=0.12.0
+
+# API
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+
+# Testing
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+httpx>=0.27.0

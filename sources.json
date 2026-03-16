@@ -1,0 +1,31 @@
+{
+  "substack": [
+    {
+      "name": "Stratechery",
+      "rss_url": "https://stratechery.com/feed"
+    }
+  ],
+  "reddit": [
+    {
+      "name": "r/LocalLLaMA",
+      "subreddit": "LocalLLaMA",
+      "sort": "hot",
+      "limit": 5
+    }
+  ],
+  "youtube": [
+    {
+      "name": "Fireship",
+      "channel_id": "UCsBjURrPoezykLs9EqgamOA",
+      "max_results": 3,
+      "fetch_transcript": true
+    }
+  ],
+  "twitter": [
+    {
+      "name": "@elonmusk",
+      "handle": "elonmusk",
+      "max_tweets": 5
+    }
+  ]
+}

@@ -1,6 +1,33 @@
-# React Frontend Specification
+# Frontend Specification
 
-Use this specification in a UI generator (like Lovable, v0.dev, or Bolt.new) to build the frontend for the Newsfeed Aggregator.
+This document describes the implemented frontend for the Newsfeed Aggregator.
+
+## 1. Goal
+A premium, dark-themed newsfeed dashboard that consumes the FastAPI backend. The frontend is built with vanilla HTML, CSS, and JavaScript (no framework dependencies) and is served directly by the FastAPI server.
+
+## 2. Implementation
+
+The frontend has been implemented with the following files:
+- `frontend/index.html` - Main HTML structure
+- `frontend/styles.css` - Dark theme styling with CSS variables
+- `frontend/app.js` - JavaScript for API integration and UI logic
+
+### Features Implemented
+- Platform filtering (Substack, Reddit, YouTube, Twitter/X)
+- Search functionality
+- AI Newsletter generation and viewing
+- Real-time health status
+- Responsive design for mobile
+- Smooth animations and hover effects
+
+### Access
+The frontend is served directly by FastAPI at `http://localhost:8000`
+
+---
+
+# Original Specification (for reference)
+
+Use this specification in a UI generator (like Lovable, v0.dev, or Bolt.new) to build an alternative frontend.
 
 ## 1. Goal
 Build a personalized daily newsfeed dashboard that consumes a unified JSON API from a FastAPI backend. It should feel premium, responsive, and prominently show the origin of every piece of content.

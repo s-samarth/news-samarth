@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>News Samarth - AI-Powered News Aggregator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1 class="logo">📰 News Samarth</h1>
+                <p class="tagline">AI-Powered News Aggregator</p>
+            </div>
+
+            <!-- Platform Filters -->
+            <div class="filter-section">
+                <h3 class="section-title">Platforms</h3>
+                <div class="platform-filters">
+                    <button class="filter-btn active" data-platform="all">
+                        <span class="filter-icon">🌐</span>
+                        <span>All Sources</span>
+                    </button>
+                    <button class="filter-btn" data-platform="substack">
+                        <span class="platform-badge substack">S</span>
+                        <span>Substack</span>
+                    </button>
+                    <button class="filter-btn" data-platform="reddit">
+                        <span class="platform-badge reddit">R</span>
+                        <span>Reddit</span>
+                    </button>
+                    <button class="filter-btn" data-platform="youtube">
+                        <span class="platform-badge youtube">Y</span>
+                        <span>YouTube</span>
+                    </button>
+                    <button class="filter-btn" data-platform="twitter">
+                        <span class="platform-badge twitter">X</span>
+                        <span>Twitter/X</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Newsletter Section -->
+            <div class="filter-section">
+                <h3 class="section-title">AI Newsletter</h3>
+                <button class="newsletter-btn" id="generateNewsletter">
+                    <span>✨</span>
+                    <span>Generate Newsletter</span>
+                </button>
+                <button class="newsletter-btn secondary" id="viewLatestNewsletter">
+                    <span>📄</span>
+                    <span>View Latest</span>
+                </button>
+            </div>
+
+            <!-- Health Widget -->
+            <div class="health-widget">
+                <h3 class="section-title">System Status</h3>
+                <div class="health-stats">
+                    <div class="stat-item">
+                        <span class="stat-label">Articles</span>
+                        <span class="stat-value" id="articleCount">-</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Status</span>
+                        <span class="stat-value status-ok" id="systemStatus">Checking...</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="content-header">
+                <div class="header-left">
+                    <h2 class="page-title">Your Feed</h2>
+                    <p class="feed-subtitle" id="feedSubtitle">Latest news from all sources</p>
+                </div>
+                <div class="header-right">
+                    <div class="search-box">
+                        <input type="text" id="searchInput" placeholder="Search articles...">
+                        <button id="searchBtn">🔍</button>
+                    </div>
+                    <button class="refresh-btn" id="refreshFeed">
+                        <span>🔄</span>
+                        <span>Refresh</span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Feed Container -->
+            <div class="feed-container" id="feedContainer">
+                <div class="loading-spinner" id="loadingSpinner">
+                    <div class="spinner"></div>
+                    <p>Loading your feed...</p>
+                </div>
+                <div class="feed-grid" id="feedGrid"></div>
+                <div class="empty-state" id="emptyState" style="display: none;">
+                    <span class="empty-icon">📭</span>
+                    <h3>No articles found</h3>
+                    <p>Try adjusting your filters or refresh the feed</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Newsletter Modal -->
+    <div class="modal" id="newsletterModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>AI Newsletter</h2>
+                <button class="modal-close" id="closeModal">&times;</button>
+            </div>
+            <div class="modal-body" id="newsletterContent">
+                <div class="loading-spinner">
+                    <div class="spinner"></div>
+                    <p>Generating your personalized newsletter...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

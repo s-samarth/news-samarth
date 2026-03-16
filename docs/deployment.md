@@ -20,7 +20,7 @@ Since this is a low-volume scraper (20-30 items/day), running it on your local m
 If you wish to host this in the cloud, follow these recommendations:
 
 ### A. Scraper (Background Jobs)
-- **GitHub Actions**: You can schedule `run_all.py` as a GitHub Action. However, notice that **SQLite is a local file**. You would need to commit the updated `newsfeed.db` back to the repo (not recommended) or use a hosted database like **ElephantSQL (PostgreSQL)** by modifying `db/models.py`.
+- **GitHub Actions**: You can schedule `run_all.py` as a GitHub Action. ChromaDB stores data locally, so you would need to commit the `db/chroma_db/` directory back to the repo or use a hosted vector database.
 - **VPS (DigitalOcean/Linode)**: A simple $5/mo VPS is ideal. Set up your cron job there as described in Section 1.
 
 ### B. API Layer
@@ -34,11 +34,34 @@ To keep the FastAPI server running 24/7 on a server:
    gunicorn -w 4 -k uvicorn.workers.UvicornWorker api.main:app --bind 0.0.0.0:8000
    ```
 
+### C. Frontend (Included)
+The frontend is now served directly by FastAPI:
+- No separate frontend build step required
+- Static files served from `frontend/` directory
+- Access at `http://localhost:8000`
+
 ## 3. Persistent Sessions
 - **Twitter**: The `accounts.db` created by `twscrape` must persist. If you are using Docker or a transient cloud environment, ensure this file is mapped to a persistent volume.
-- **SQLite**: Ensure `db/newsfeed.db` is backed up or stored on persistent storage. It contains your entire historical news stash.
+- **ChromaDB**: Ensure `db/chroma_db/` is backed up or stored on persistent storage. It contains your entire historical news stash.
 
-## 4. Frontend Deployment
-Since the frontend spec is designed for React:
-- **Vercel / Netlify**: Ideal for hosting the static React build.
-- **CORS Configuration**: In `api/main.py`, ensure the `allow_origins` list includes your production frontend URL (e.g., `https://my-newsfeed.vercel.app`).
+## 4. Docker Deployment (Optional)
+Create a `Dockerfile` for easy deployment:
+
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY . .
+
+EXPOSE 8000
+CMD ["python", "api/main.py"]
+```
+
+Build and run:
+```bash
+docker build -t news-samarth .
+docker run -p 8000:8000 -v $(pwd)/db:/app/db news-samarth
+```

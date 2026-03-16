@@ -12,6 +12,15 @@ twscrape>=0.12.0
 fastapi>=0.110.0
 uvicorn[standard]>=0.27.0
 
+# Database (NoSQL - AI-ready)
+chromadb>=0.4.0
+
+# AI/LLM (LangChain + OpenRouter)
+langchain>=0.1.0
+langchain-openai>=0.0.5
+langchain-community>=0.0.10
+langgraph>=0.0.20
+
 # Testing
 pytest>=8.0.0
 pytest-asyncio>=0.23.0

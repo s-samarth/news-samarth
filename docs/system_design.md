@@ -11,7 +11,7 @@ The system follows a classic **ETL (Extract, Transform, Load)** pattern decouple
 └─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
 ```
 
-1. **Config**: Master `sources.json` is read by the `config.py` module.
+1. **Config**: Master `sources.json` is read by the `config.py` module. Each platform has its own schema.
 2. **Extraction (E)**: Platform-specific classes in `extractors/` fetch raw data.
 3. **Transformation (T)**: Data is normalized into a standard Python `dict` with full content.
 4. **Loading (L)**: `chroma_db.py` performs upserts into the ChromaDB database.
@@ -35,9 +35,9 @@ The system follows a classic **ETL (Extract, Transform, Load)** pattern decouple
 
 ### **C. Extractor Suite (`extractors/`)**
 - **Modular Design**: Every platform inherits from `BaseExtractor`.
-- **Full Content Storage**: 
+- **Full Content Storage**:
   - YouTube: Complete video transcripts
-  - Reddit: Full post body + optional comments
+  - Reddit: Full post body (via RSS feeds, no API credentials required)
   - Substack: Complete newsletter text (HTML stripped)
   - Twitter: Full tweet content (no truncation)
 - **Resilience**: Platform isolation ensures failures don't cascade.
@@ -218,7 +218,7 @@ The system now includes a sophisticated 4-agent newsletter generation system:
 │ YouTube         │ Reddit          │ Substack        │ Twitter                 │
 │ - Full          │ - Full post     │ - Full          │ - Full tweet            │
 │   transcripts   │   body          │   newsletter    │   text                  │
-│ - API v3        │ - PRAW          │ - RSS feed      │ - twscrape              │
+│ - API v3        │ - RSS feed      │ - RSS feed      │ - twscrape              │
 └─────────────────┴─────────────────┴─────────────────┴─────────────────────────┘
                                           │
                                           ▼

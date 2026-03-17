@@ -6,7 +6,7 @@ A highly reliable, personalized daily newsfeed aggregator that scrapes content f
 
 1. **Install Dependencies:** `pip install -r requirements.txt`
 2. **Setup Env:** Copy `.env.example` to `.env` and add your API keys.
-3. **Configure Sources:** Add your URLs/handles to `sources.json`.
+3. **Configure Sources:** Add your URLs/handles to `sources.json` using platform-specific schemas.
 4. **Initialize Twitter:** `twscrape add_accounts accounts.txt && twscrape login_accounts`.
 5. **Run Extraction:** `python scripts/run_all.py`.
 6. **Start API:** `python api/main.py`.
@@ -17,7 +17,10 @@ A highly reliable, personalized daily newsfeed aggregator that scrapes content f
 |----------|-------------|
 | [📖 Product Overview](docs/product_overview.md) | The "Why" behind the project, features, and target user. |
 | [🏗️ System Design](docs/system_design.md) | Technical architecture, data flow, and component breakdown. |
+| [👤 User Actions Guide](docs/user_actions.md) | **Complete step-by-step setup guide** - every action needed to run the system. |
 | [🛠️ Running Instructions](docs/instructions.md) | Comprehensive guide on setup, configuration, and execution. |
+| [🧪 Testing Guide](docs/testing_guide.md) | Complete testing and running guide with step-by-step instructions. |
+| [🔄 Reddit RSS Migration](docs/reddit_rss_migration_plan.md) | **Plan to migrate from PRAW to RSS feeds** - eliminates Reddit API credential issues. |
 | [🚢 Deployment Guide](docs/deployment.md) | How to schedule runs and host the API. |
 | [🎨 Frontend Specs](docs/frontend_spec.md) | Data contracts and prompts for UI generation. |
 | [🗄️ ChromaDB Schema](docs/chromadb_schema.md) | Database schema and AI-ready features. |
@@ -29,7 +32,7 @@ A highly reliable, personalized daily newsfeed aggregator that scrapes content f
 - **Backend:** Python 3.11+
 - **Framework:** FastAPI
 - **Database:** ChromaDB (NoSQL, AI-ready, local-first)
-- **Extractors:** PRAW (Reddit), feedparser (Substack), Google API v3 (YouTube), twscrape (Twitter)
+- **Extractors:** feedparser (Reddit, Substack, YouTube RSS), youtube-transcript-api (YouTube transcripts), twscrape (Twitter)
 - **AI/LLM:** LangChain, LangGraph, OpenRouter
 - **Scheduling:** Crontab (macOS/Linux)
 

@@ -25,7 +25,7 @@ Follow this guide to get your Newsfeed Aggregator up and running for the first t
     This installs all required packages including:
     - `chromadb` - NoSQL database for AI-ready content storage
     - `fastapi` & `uvicorn` - API server
-    - `praw`, `feedparser`, `google-api-python-client`, `twscrape` - Platform extractors
+    - `feedparser`, `google-api-python-client`, `twscrape` - Platform extractors
 
 ## 3. Configuration
 
@@ -36,38 +36,74 @@ cp .env.example .env
 ```
 
 Required API keys:
-- **Reddit**: Create an app at [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps). Choose **script**.
 - **YouTube**: Create a project in [Google Cloud Console](https://console.cloud.google.com/), enable **YouTube Data API v3**, and generate an API key.
 - **OpenRouter** (Optional): For AI summarization and newsletter features. Get an API key at [openrouter.ai](https://openrouter.ai).
 
+**Note**: Reddit content is accessed via RSS feeds (no API credentials required).
+
 ### B. Targets (`sources.json`)
-Open `sources.json` and add your favorite creators. 
+Open `sources.json` and add your favorite creators using platform-specific schemas. Each platform has its own configuration structure:
 
 ```json
 {
-  "youtube": [
-    {
-      "name": "Fireship",
-      "channel_id": "UCsBjURrPoezykLs9EqgamOA",
-      "max_results": 3,
-      "fetch_transcript": true
-    }
-  ],
-  "reddit": [
-    {
-      "name": "r/LocalLLaMA",
-      "subreddit": "LocalLLaMA",
-      "sort": "hot",
-      "limit": 5
-    }
-  ]
+  "youtube": {
+    "_schema": "YouTube channels require channel_id (not username), max_results limit, and transcript fetching option",
+    "_required_fields": ["name", "channel_id"],
+    "_optional_fields": ["max_results", "fetch_transcript"],
+    "sources": [
+      {
+        "name": "Fireship",
+        "channel_id": "UCsBjURrPoezykLs9EqgamOA",
+        "max_results": 3,
+        "fetch_transcript": true
+      }
+    ]
+  },
+  "reddit": {
+    "_schema": "Reddit subreddits use RSS feeds (no API credentials required). Supports sort options via different RSS endpoints.",
+    "_required_fields": ["name", "subreddit"],
+    "_optional_fields": ["sort", "limit"],
+    "sources": [
+      {
+        "name": "r/LocalLLaMA",
+        "subreddit": "LocalLLaMA",
+        "sort": "hot",
+        "limit": 10
+      }
+    ]
+  },
+  "substack": {
+    "_schema": "Substack newsletters use RSS feeds. URL must end with /feed",
+    "_required_fields": ["name", "rss_url"],
+    "sources": [
+      {
+        "name": "Stratechery",
+        "rss_url": "https://stratechery.com/feed"
+      }
+    ]
+  },
+  "twitter": {
+    "_schema": "Twitter/X accounts use twscrape library (no official API). Requires account setup via twscrape CLI.",
+    "_required_fields": ["name", "handle"],
+    "_optional_fields": ["max_tweets"],
+    "sources": [
+      {
+        "name": "@elonmusk",
+        "handle": "elonmusk",
+        "max_tweets": 10
+      }
+    ]
+  }
 }
 ```
 
-**Important**: 
-- Use the correct `channel_id` for YouTube (not the username).
-- Substack requires the direct RSS link (usually `yoursite.substack.com/feed`).
-- Set `fetch_transcript: true` for YouTube to get full video transcripts.
+**Important**:
+- Each platform has its own schema with required and optional fields
+- Use the correct `channel_id` for YouTube (not the username)
+- Substack requires the direct RSS link (usually `yoursite.substack.com/feed`)
+- Reddit uses RSS feeds (no API credentials required). Use `https://www.reddit.com/r/{subreddit}/.rss` format
+- Set `fetch_transcript: true` for YouTube to get full video transcripts
+- See the [Testing Guide](testing_guide.md#13-platform-specific-schema-reference) for detailed schema documentation
 
 ## 4. Twitter/X Account Setup
 The `twscrape` library uses a pool of accounts rather than an official API.

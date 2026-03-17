@@ -1,31 +1,107 @@
 {
-  "substack": [
-    {
-      "name": "Stratechery",
-      "rss_url": "https://stratechery.com/feed"
-    }
-  ],
-  "reddit": [
-    {
-      "name": "r/LocalLLaMA",
-      "subreddit": "LocalLLaMA",
-      "sort": "hot",
-      "limit": 5
-    }
-  ],
-  "youtube": [
-    {
-      "name": "Fireship",
-      "channel_id": "UCsBjURrPoezykLs9EqgamOA",
-      "max_results": 3,
-      "fetch_transcript": true
-    }
-  ],
-  "twitter": [
-    {
-      "name": "@elonmusk",
-      "handle": "elonmusk",
-      "max_tweets": 5
-    }
-  ]
+  "_comment": "Platform-specific schemas - each platform has unique configuration requirements",
+  
+  "youtube": {
+    "_schema": "YouTube channels use RSS feeds (no API key required). Channel IDs are used to construct RSS feed URLs.",
+    "_required_fields": ["name", "channel_id"],
+    "_optional_fields": ["max_results", "fetch_transcript", "filter_shorts"],
+    "_rss_url_format": "https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}",
+    "_how_to_find_channel_id": "Go to channel page → View Page Source → Search for 'channel_id' → Copy 24-char string starting with UC",
+    "_example_channel_id": "UCsBjURrPoezykLs9EqgamOA",
+    "sources": [
+      {
+        "name": "Fireship",
+        "channel_id": "UCsBjURrPoezykLs9EqgamOA",
+        "max_results": 15,
+        "fetch_transcript": true,
+        "filter_shorts": true
+      },
+      {
+        "name": "Two Minute Papers",
+        "channel_id": "UCbfYPyITQ-7l4upoX8nvctg",
+        "max_results": 15,
+        "fetch_transcript": true,
+        "filter_shorts": true
+      }
+    ]
+  },
+  
+  "reddit": {
+    "_schema": "Reddit subreddits use RSS feeds (no API credentials required). Supports sort options via different RSS endpoints.",
+    "_required_fields": ["name", "subreddit"],
+    "_optional_fields": ["sort", "limit"],
+    "_sort_options": {
+      "hot": "https://www.reddit.com/r/{subreddit}/.rss",
+      "new": "https://www.reddit.com/r/{subreddit}/new/.rss",
+      "top": "https://www.reddit.com/r/{subreddit}/top/.rss?t=day",
+      "rising": "https://www.reddit.com/r/{subreddit}/rising/.rss"
+    },
+    "_note": "If www.reddit.com blocks requests, use old.reddit.com instead",
+    "sources": [
+      {
+        "name": "r/LocalLLaMA",
+        "subreddit": "LocalLLaMA",
+        "sort": "hot",
+        "limit": 10
+      },
+      {
+        "name": "r/MachineLearning",
+        "subreddit": "MachineLearning",
+        "sort": "top",
+        "limit": 5
+      },
+      {
+        "name": "r/Python",
+        "subreddit": "Python",
+        "sort": "hot",
+        "limit": 8
+      }
+    ]
+  },
+  
+  "substack": {
+    "_schema": "Substack newsletters use RSS feeds. URL must end with /feed",
+    "_required_fields": ["name", "rss_url"],
+    "_optional_fields": [],
+    "_note": "RSS URL format: https://publication.substack.com/feed",
+    "sources": [
+      {
+        "name": "Stratechery",
+        "rss_url": "https://stratechery.com/feed"
+      },
+      {
+        "name": "Lenny's Newsletter",
+        "rss_url": "https://www.lennysnewsletter.com/feed"
+      },
+      {
+        "name": "The Pragmatic Engineer",
+        "rss_url": "https://newsletter.pragmaticengineer.com/feed"
+      }
+    ]
+  },
+  
+  "twitter": {
+    "_schema": "Twitter/X accounts use twscrape library (no official API). Requires account setup via twscrape CLI.",
+    "_required_fields": ["name", "handle"],
+    "_optional_fields": ["max_tweets"],
+    "_setup_required": "Run: twscrape add_accounts accounts.txt && twscrape login_accounts",
+    "_note": "Use throwaway accounts, not your main Twitter account",
+    "sources": [
+      {
+        "name": "@elonmusk",
+        "handle": "elonmusk",
+        "max_tweets": 10
+      },
+      {
+        "name": "@sama",
+        "handle": "sama",
+        "max_tweets": 5
+      },
+      {
+        "name": "@kaboroii",
+        "handle": "kaboroii",
+        "max_tweets": 8
+      }
+    ]
+  }
 }

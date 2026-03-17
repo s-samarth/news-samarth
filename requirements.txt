@@ -3,8 +3,6 @@ python-dotenv>=1.0.0
 
 # Extractors
 feedparser>=6.0.0
-praw>=7.7.0
-google-api-python-client>=2.100.0
 youtube-transcript-api>=0.6.0
 twscrape>=0.12.0
 

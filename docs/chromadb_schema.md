@@ -11,6 +11,7 @@ ChromaDB is a local-first, AI-ready NoSQL document database. Unlike traditional 
 - **Local-first**: All data stored on your machine at `db/chroma_db/`
 - **Vector-ready**: Built-in support for semantic search
 - **AI-native**: Seamless integration with LangChain, LlamaIndex
+- **Platform-specific schemas**: Each source type (YouTube, Reddit, Substack, Twitter) has its own configuration structure
 
 ---
 

@@ -1,218 +1,185 @@
 """
-Reddit Extractor Module
+Reddit Extractor Module (RSS-based)
 
-Fetches posts and content from Reddit subreddits using PRAW (Python Reddit API Wrapper).
-Stores full post content including self-text for AI/analysis purposes.
+Fetches posts from Reddit subreddits using RSS feeds.
+Uses feedparser to parse RSS feeds and extracts full post content.
 
 Features:
-    - Fetches posts from configured subreddits
-    - Supports multiple sort options (hot, new, top)
+    - Fetches posts from configured subreddit RSS feeds
+    - No API credentials required
     - Stores complete post body text
-    - Optionally includes top comments
-    - Skips stickied posts
+    - Handles both www.reddit.com and old.reddit.com URLs
+    - Automatic fallback to old.reddit.com if blocked
 
 Example:
     >>> from extractors.reddit import RedditExtractor
     >>> extractor = RedditExtractor()
-    >>> articles = extractor.extract([{"name": "r/LocalLLaMA", "subreddit": "LocalLLaMA", "limit": 5}])
+    >>> articles = extractor.extract([{
+    ...     "name": "r/LocalLLaMA",
+    ...     "rss_url": "https://www.reddit.com/r/LocalLLaMA/.rss",
+    ...     "limit": 5
+    ... }])
 """
 
-import praw
-from datetime import datetime
+import feedparser
+import re
 from typing import List, Dict, Any
 
 from .base import BaseExtractor
-from config import config
 
 
 class RedditExtractor(BaseExtractor):
     """
-    Extractor for Reddit subreddit content.
+    Extractor for Reddit subreddit content via RSS feeds.
     
-    Fetches posts from Reddit using PRAW with authenticated access.
-    Requires Reddit API credentials configured in .env file.
+    Fetches posts from Reddit using RSS feeds without requiring API credentials.
+    Uses feedparser (same as Substack extractor) for consistency.
     """
     
-    def __init__(self):
-        """
-        Initialize the Reddit extractor with API credentials.
-        
-        Sets up PRAW client using credentials from config.
-        If credentials are missing, extraction will return empty results.
-        """
-        creds = config.reddit_creds
-        self.reddit = None
-        
-        if all(creds.values()):
-            try:
-                self.reddit = praw.Reddit(
-                    client_id=creds["client_id"],
-                    client_secret=creds["client_secret"],
-                    user_agent=creds["user_agent"],
-                    username=creds["username"],
-                    password=creds["password"]
-                )
-            except Exception as e:
-                print(f"Failed to initialize Reddit PRAW: {e}")
-
     def extract(self, sources: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        Extract posts from configured subreddits.
+        Extract posts from configured subreddit RSS feeds.
         
-        For each configured subreddit, fetches posts based on sort order
-        and stores the full post content.
+        For each configured subreddit RSS feed, fetches posts and stores
+        the full post content.
         
         Args:
             sources: List of subreddit configurations with keys:
                 - name (str): Display name for the source
-                - subreddit (str): Subreddit name (required)
-                - limit (int): Max posts to fetch (default: 5)
-                - sort (str): Sort order - "hot", "new", "top" (default: "hot")
-                - include_comments (bool): Include top comments (default: False)
+                - rss_url (str): RSS feed URL (required)
+                - limit (int): Max posts to fetch (default: 10)
                 
         Returns:
             List of article dictionaries with full content:
             - platform: "reddit"
             - source_name: Display name
             - title: Post title
-            - content_text: Full post body + optional comments
+            - content_text: Full post body
             - url: Reddit permalink
             - timestamp: Publication date (ISO 8601)
-            - media_link: Thumbnail URL (if valid)
+            - media_link: Thumbnail URL (if available)
         """
         extracted_articles = []
         
-        if not self.reddit:
-            print("Reddit credentials missing - skipping Reddit extraction.")
-            return []
-            
         for source in sources:
             name = source.get("name")
-            subreddit_name = source.get("subreddit")
-            limit = source.get("limit", 5)
-            sort = source.get("sort", "hot")
-            include_comments = source.get("include_comments", False)
+            rss_url = source.get("rss_url")
+            limit = source.get("limit", 10)
             
-            if not subreddit_name:
-                print(f"Warning: No subreddit provided for source '{name}', skipping.")
+            if not rss_url:
+                print(f"Warning: No RSS URL provided for source '{name}', skipping.")
                 continue
                 
             try:
-                articles = self._extract_subreddit(
-                    name, subreddit_name, limit, sort, include_comments
-                )
+                articles = self._extract_feed(name, rss_url, limit)
                 extracted_articles.extend(articles)
             except Exception as e:
-                print(f"Error extracting from Reddit r/{subreddit_name}: {e}")
+                print(f"Error extracting from Reddit {name}: {e}")
+                # Try fallback to old.reddit.com
+                if "www.reddit.com" in rss_url:
+                    fallback_url = rss_url.replace("www.reddit.com", "old.reddit.com")
+                    print(f"Trying fallback: {fallback_url}")
+                    try:
+                        articles = self._extract_feed(name, fallback_url, limit)
+                        extracted_articles.extend(articles)
+                    except Exception as e2:
+                        print(f"Fallback also failed: {e2}")
                 
         return extracted_articles
     
-    def _extract_subreddit(
-        self,
-        name: str,
-        subreddit_name: str,
-        limit: int,
-        sort: str,
-        include_comments: bool
-    ) -> List[Dict[str, Any]]:
+    def _extract_feed(self, name: str, rss_url: str, limit: int) -> List[Dict[str, Any]]:
         """
-        Extract posts from a single subreddit.
+        Extract posts from a single RSS feed.
         
         Args:
             name: Display name for the source
-            subreddit_name: Subreddit name
+            rss_url: RSS feed URL
             limit: Maximum posts to fetch
-            sort: Sort order
-            include_comments: Whether to include top comments
             
         Returns:
             List of article dictionaries
         """
         articles = []
-        subreddit = self.reddit.subreddit(subreddit_name)
+        feed = feedparser.parse(rss_url)
         
-        # Get submissions based on sort order
-        submissions = self._get_submissions(subreddit, sort, limit)
+        # Limit entries
+        entries = feed.entries[:limit]
         
-        for submission in submissions:
-            # Skip stickied posts (usually announcements)
-            if submission.stickied:
-                continue
+        for entry in entries:
+            # Extract full content
+            content = self._extract_content(entry)
             
-            # Build full content text
-            content_text = self._build_content(submission, include_comments)
+            # Extract thumbnail
+            media_link = self._extract_thumbnail(entry)
             
             # Extract timestamp
-            dt = datetime.fromtimestamp(submission.created_utc)
-            
-            # Validate thumbnail URL
-            thumbnail = submission.thumbnail
-            media_link = thumbnail if thumbnail and thumbnail.startswith("http") else None
+            timestamp = entry.get("published", "")
             
             articles.append({
                 "platform": "reddit",
                 "source_name": name,
-                "title": submission.title,
-                "content_text": content_text,
-                "url": f"https://www.reddit.com{submission.permalink}",
-                "timestamp": dt.isoformat(),
+                "title": entry.get("title"),
+                "content_text": content,
+                "url": entry.get("link"),
+                "timestamp": timestamp,
                 "media_link": media_link
             })
             
         return articles
     
-    def _get_submissions(self, subreddit, sort: str, limit: int):
+    def _extract_content(self, entry) -> str:
         """
-        Get submissions from subreddit based on sort order.
+        Extract full post content from RSS entry.
+        
+        Tries content field first (full post), then falls back to summary.
+        Strips HTML tags for clean text storage.
         
         Args:
-            subreddit: PRAW subreddit object
-            sort: Sort order ("hot", "new", "top")
-            limit: Maximum number of submissions
+            entry: feedparser entry object
             
         Returns:
-            List of PRAW submission objects
+            Clean post text
         """
-        if sort == "hot":
-            return subreddit.hot(limit=limit)
-        elif sort == "new":
-            return subreddit.new(limit=limit)
-        elif sort == "top":
-            return subreddit.top(time_filter="day", limit=limit)
-        else:
-            # Default to hot
-            return subreddit.hot(limit=limit)
+        content = ""
+        
+        # Try full content first
+        if hasattr(entry, "content") and entry.content:
+            content = entry.content[0].value
+        # Fall back to summary
+        elif hasattr(entry, "summary"):
+            content = entry.summary
+        
+        # Strip HTML tags for clean text
+        if content:
+            content = re.sub(r'<[^<]+?>', '', content)
+            # Clean up extra whitespace
+            content = re.sub(r'\n\s*\n', '\n\n', content)
+            content = content.strip()
+        
+        return content if content else entry.get("title", "")
     
-    def _build_content(self, submission, include_comments: bool) -> str:
+    def _extract_thumbnail(self, entry) -> str:
         """
-        Build full content text from submission.
+        Extract thumbnail image URL from RSS entry.
         
-        Combines post body (selftext) with optional top comments
-        for comprehensive content storage.
+        Checks multiple possible locations for thumbnail:
+        - media_thumbnail field
+        - enclosure links with image type
         
         Args:
-            submission: PRAW submission object
-            include_comments: Whether to include top comments
+            entry: feedparser entry object
             
         Returns:
-            Full content text
+            Thumbnail URL or None
         """
-        parts = []
+        # Check media_thumbnail field
+        if "media_thumbnail" in entry and entry.media_thumbnail:
+            return entry.media_thumbnail[0].get("url")
         
-        # Add post body (selftext)
-        if submission.selftext:
-            # Cap at 10000 chars to prevent excessive storage
-            parts.append(submission.selftext[:10000])
+        # Check enclosure links
+        if "links" in entry:
+            for link in entry.links:
+                if "image" in link.get("type", ""):
+                    return link.get("href")
         
-        # Optionally add top comments
-        if include_comments:
-            submission.comments.replace_more(limit=0)  # Flatten comment tree
-            top_comments = submission.comments[:5]  # Top 5 comments
-            
-            if top_comments:
-                parts.append("\n\n--- Top Comments ---\n")
-                for i, comment in enumerate(top_comments, 1):
-                    if hasattr(comment, 'body'):
-                        parts.append(f"\n{i}. {comment.body[:500]}")
-        
-        return "\n".join(parts) if parts else submission.title
+        return None

@@ -33,20 +33,36 @@ class Config:
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
     def _load_sources(self):
+        """
+        Load sources from sources.json with platform-specific schema support.
+        
+        The sources.json file uses a platform-specific schema where each platform
+        has its own configuration structure tailored to its data format:
+        
+        - youtube: Requires channel_id, max_results, fetch_transcript
+        - reddit: Requires subreddit, sort, limit
+        - substack: Requires rss_url
+        - twitter: Requires handle, max_tweets
+        
+        Returns:
+            dict: Platform-specific source configurations
+        """
         if not self.sources_path.exists():
             return {}
+        
         with open(self.sources_path, "r") as f:
-            return json.load(f)
-
-    @property
-    def reddit_creds(self):
-        return {
-            "client_id": os.getenv("REDDIT_CLIENT_ID"),
-            "client_secret": os.getenv("REDDIT_CLIENT_SECRET"),
-            "user_agent": os.getenv("REDDIT_USER_AGENT", "newsfeed-aggregator/1.0"),
-            "username": os.getenv("REDDIT_USERNAME"),
-            "password": os.getenv("REDDIT_PASSWORD"),
-        }
+            raw_sources = json.load(f)
+        
+        # Extract sources from platform-specific schema
+        # Each platform has a "sources" key containing the list of sources
+        sources = {}
+        for platform in ["youtube", "reddit", "substack", "twitter"]:
+            if platform in raw_sources and "sources" in raw_sources[platform]:
+                sources[platform] = raw_sources[platform]["sources"]
+            else:
+                sources[platform] = []
+        
+        return sources
 
     @property
     def youtube_api_key(self) -> str:

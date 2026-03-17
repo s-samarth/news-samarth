@@ -10,13 +10,14 @@ In an era of algorithmic noise and platform fragmentation, the **Newsfeed Aggreg
 - **Low Cost / Zero Cost**: Utilizes free-tiers and open-source scraping tools.
 - **Privacy & Ownership**: All data stays in a local ChromaDB database on your machine.
 - **AI-Ready**: NoSQL document storage enables semantic search, embeddings, and AI integrations.
+- **Platform-Specific Schemas**: Each platform has its own configuration structure tailored to its data format.
 
 ## 3. Core Features
 
 ### Multi-Platform Support
 Targeted extraction for:
 - **Substack** (RSS): Full newsletter text
-- **Reddit** (API): Complete post body + optional comments
+- **Reddit** (RSS): Complete post body (no API credentials required)
 - **YouTube** (API + Transcripts): Full video transcripts
 - **Twitter/X** (twscrape): Complete tweet content
 

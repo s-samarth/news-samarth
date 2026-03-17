@@ -16,6 +16,9 @@ Since this is a low-volume scraper (20-30 items/day), running it on your local m
    ```
    *Note: Use absolute paths for both the project directory and the python executable inside your venv.*
 
+### Configuration Note
+The `sources.json` file uses platform-specific schemas. Each platform (YouTube, Reddit, Substack, Twitter) has its own configuration structure tailored to its data format. See the [Testing Guide](testing_guide.md#13-platform-specific-schema-reference) for detailed schema documentation.
+
 ## 2. Server Deployment (Cloud)
 If you wish to host this in the cloud, follow these recommendations:
 

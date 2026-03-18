@@ -5,11 +5,25 @@ A highly reliable, personalized daily newsfeed aggregator that scrapes content f
 ## 🚀 Quick Start
 
 1. **Install Dependencies:** `pip install -r requirements.txt`
-2. **Setup Env:** Copy `.env.example` to `.env` and add your API keys.
-3. **Configure Sources:** Add your URLs/handles to `sources.json` using platform-specific schemas.
-4. **Initialize Twitter:** `twscrape add_accounts accounts.txt && twscrape login_accounts`.
+2. **Install Playwright Browser:** `playwright install chromium`
+3. **Setup Env:** Copy `.env.example` to `.env` and add your API keys and Twitter credentials.
+4. **Configure Sources:** Add your URLs/handles to `sources.json` using platform-specific schemas.
 5. **Run Extraction:** `python scripts/run_all.py`.
 6. **Start API:** `python api/main.py`.
+
+### Twitter/X Setup (First Time)
+1. Add your burner account credentials to `.env`:
+   ```
+   TWITTER_USERNAME=your_burner_username
+   TWITTER_PASSWORD=your_burner_password
+   TWITTER_EMAIL=your_email_for_verification
+   ```
+2. Run with `headless=False` for initial login debugging:
+   ```python
+   # In scripts/run_all.py or run_single.py, modify:
+   "twitter": TwitterPlaywrightExtractor(headless=False)
+   ```
+3. After successful login, session persists in `.playwright_twitter_profile/`
 
 ## 📚 Detailed Documentation
 
@@ -26,13 +40,14 @@ A highly reliable, personalized daily newsfeed aggregator that scrapes content f
 | [🗄️ ChromaDB Schema](docs/chromadb_schema.md) | Database schema and AI-ready features. |
 | [🤖 AI Summarization](docs/ai_summarization.md) | LangChain/LangGraph daily digest generation. |
 | [📰 Newsletter System](docs/newsletter_system.md) | AI agent-based newsletter with ranking & RAG. |
+| [📡 API Documentation](docs/api_documentation.md) | **Complete REST API reference** - all endpoints, parameters, and examples. |
 
 ## 🛠️ Tech Stack
 
 - **Backend:** Python 3.11+
 - **Framework:** FastAPI
 - **Database:** ChromaDB (NoSQL, AI-ready, local-first)
-- **Extractors:** feedparser (Reddit, Substack, YouTube RSS), youtube-transcript-api (YouTube transcripts), twscrape (Twitter)
+- **Extractors:** feedparser (Reddit, Substack, YouTube RSS), youtube-transcript-api (YouTube transcripts), Playwright (Twitter/X)
 - **AI/LLM:** LangChain, LangGraph, OpenRouter
 - **Scheduling:** Crontab (macOS/Linux)
 
@@ -132,10 +147,22 @@ Generate professional newsletters using 4-agent LangGraph workflow:
 - **RAG Deduplication**: Identifies duplicates and tracks story updates
 - **Source Attribution**: Every story includes full source tracking
 - **Newsletter History**: All newsletters stored for retrieval
+- **Date-Based Generation**: Generate newsletters for any date in the last 30 days
 
 ```bash
-# Generate newsletter
+# Generate newsletter for today
 curl -X POST http://localhost:8000/newsletter/generate
+
+# Two-phase date-based generation
+# Phase 1: Fetch articles for specific date
+curl -X POST http://localhost:8000/newsletter/fetch \
+  -H "Content-Type: application/json" \
+  -d '{"date": "2024-01-15"}'
+
+# Phase 2: Generate newsletter (with force option)
+curl -X POST http://localhost:8000/newsletter/generate \
+  -H "Content-Type: application/json" \
+  -d '{"date": "2024-01-15", "force": false}'
 
 # Get latest newsletter
 curl http://localhost:8000/newsletter/latest
@@ -172,12 +199,34 @@ See [AI Summarization Docs](docs/ai_summarization.md) and [Newsletter System Doc
 ### Newsletter Endpoints (AI Agents)
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/newsletter/generate` | POST | Generate newsletter with 4-agent workflow |
+| `/newsletter/fetch` | POST | Fetch articles for specific date (Phase 1) |
+| `/newsletter/generate` | POST | Generate newsletter with date/force support (Phase 2) |
 | `/newsletter/latest` | GET | Get latest newsletter |
 | `/newsletter/{date}` | GET | Get newsletter by date |
 | `/newsletter/{date}/sources` | GET | Get source tracking with rankings |
 | `/newsletter/{date}/updates` | GET | Get update tracking |
 | `/newsletter/history` | GET | List past newsletters (1-90 days) |
+
+### Admin Endpoints (Database Management)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/admin/health` | GET | Comprehensive database health check with integrity validation |
+| `/admin/scan` | GET | Scan articles for data quality issues |
+| `/admin/cleanup` | POST | Clean up old articles (dry-run by default for safety) |
+| `/admin/cleanup/preview` | GET | Preview what would be deleted without deleting |
+| `/admin/articles` | DELETE | Surgically remove specific articles by URL or platform |
+| `/admin/backup` | POST | Create timestamped database backup |
+| `/admin/backups` | GET | List available backups with metadata |
+| `/admin/restore` | POST | Restore database from backup (with pre-restore backup) |
+| `/admin/timezone` | GET | Get timezone configuration and current time |
+
+### Environment Variables (New)
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TIMEZONE` | `local` | Timezone for date calculations (e.g., `UTC`, `America/New_York`) |
+| `AUTO_CLEANUP_ENABLED` | `false` | Enable automatic cleanup of old articles |
+| `AUTO_CLEANUP_DAYS` | `30` | Number of days to keep articles |
+| `AUTO_CLEANUP_ON_STARTUP` | `false` | Run cleanup on server startup |
 
 ---
 *Created with ⚡ by Anti-Gravity.*

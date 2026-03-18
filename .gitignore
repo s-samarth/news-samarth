@@ -5,6 +5,9 @@
 db/newsfeed.db
 accounts.db
 
+# Playwright browser profile (contains session data)
+.playwright_twitter_profile/
+
 # Python
 __pycache__/
 *.pyc

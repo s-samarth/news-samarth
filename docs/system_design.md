@@ -39,16 +39,30 @@ The system follows a classic **ETL (Extract, Transform, Load)** pattern decouple
   - YouTube: Complete video transcripts
   - Reddit: Full post body (via RSS feeds, no API credentials required)
   - Substack: Complete newsletter text (HTML stripped)
-  - Twitter: Full tweet content (no truncation)
+  - Twitter: Full tweet content via Playwright browser-based extraction with isolated session
 - **Resilience**: Platform isolation ensures failures don't cascade.
+- **Twitter/X Extraction**: Uses `TwitterPlaywrightExtractor` with Playwright for browser-based scraping with strict session isolation. Credentials stored in `.env` file, session persisted in `.playwright_twitter_profile/` directory.
 
-### **D. API Layer (`api/main.py`)**
+### **D. API Layer (`api/main.py`, `api/orchestrator.py`)**
 - **Framework**: FastAPI with automatic OpenAPI docs.
 - **CORS**: Configured for frontend access.
 - **Static File Serving**: Serves frontend from `/frontend/` directory
-- **New Endpoints**:
+- **Orchestrator Module** (`api/orchestrator.py`): Coordinates two-phase newsletter generation flow
+- **Endpoints**:
   - `/feed/recent`: Last 24 hours content
   - `/feed/search`: Semantic search (AI-ready)
+  - `/newsletter/fetch`: Fetch articles for specific date (Phase 1)
+  - `/newsletter/generate`: Generate newsletter with date/force support (Phase 2)
+  - **Admin Endpoints** (Database Management):
+    - `GET /admin/health`: Comprehensive database health check with integrity validation
+    - `GET /admin/scan`: Scan articles for data quality issues
+    - `POST /admin/cleanup`: Clean up old articles (dry-run by default for safety)
+    - `GET /admin/cleanup/preview`: Preview what would be deleted without deleting
+    - `DELETE /admin/articles`: Surgically remove specific articles by URL or platform
+    - `POST /admin/backup`: Create timestamped database backup
+    - `GET /admin/backups`: List available backups with metadata
+    - `POST /admin/restore`: Restore database from backup (with pre-restore backup)
+    - `GET /admin/timezone`: Get timezone configuration and current time
 
 ### **E. Frontend Layer (`frontend/`)**
 - **Technology**: Vanilla HTML/CSS/JavaScript (no framework dependencies)
@@ -218,7 +232,8 @@ The system now includes a sophisticated 4-agent newsletter generation system:
 │ YouTube         │ Reddit          │ Substack        │ Twitter                 │
 │ - Full          │ - Full post     │ - Full          │ - Full tweet            │
 │   transcripts   │   body          │   newsletter    │   text                  │
-│ - API v3        │ - RSS feed      │ - RSS feed      │ - twscrape              │
+│ - API v3        │ - RSS feed      │ - RSS feed      │ - Playwright browser    │
+│                 │                 │                 │   extraction            │
 └─────────────────┴─────────────────┴─────────────────┴─────────────────────────┘
                                           │
                                           ▼

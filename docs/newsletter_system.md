@@ -12,10 +12,11 @@ TABLE OF CONTENTS
 4. [RAG Implementation](#4-rag-implementation)
 5. [Newsletter Format](#5-newsletter-format)
 6. [API Endpoints](#6-api-endpoints)
-7. [Configuration](#7-configuration)
-8. [Usage Examples](#8-usage-examples)
-9. [Customization](#9-customization)
-10. [Troubleshooting](#10-troubleshooting)
+7. [Date-Based Newsletter Generation](#7-date-based-newsletter-generation)
+8. [Configuration](#8-configuration)
+9. [Usage Examples](#9-usage-examples)
+10. [Customization](#10-customization)
+11. [Troubleshooting](#11-troubleshooting)
 
 ===============================================================================
 1. OVERVIEW
@@ -34,6 +35,7 @@ newsletters from collected news articles.
 - **Source Attribution**: Every story includes full source tracking
 - **Newsletter History**: All newsletters stored in ChromaDB for retrieval
 - **Configurable Models**: Use any OpenRouter model via environment variables
+- **Date-Based Generation**: Generate newsletters for specific dates (last 30 days)
 
 ### Use Cases
 
@@ -41,6 +43,7 @@ newsletters from collected news articles.
 2. **Content Curation**: Rank and filter news for decision-makers
 3. **Story Tracking**: Track how stories evolve over time
 4. **Source Verification**: Full attribution for fact-checking
+5. **Historical Analysis**: Generate newsletters for past dates
 
 ===============================================================================
 2. ARCHITECTURE
@@ -70,9 +73,36 @@ newsletters from collected news articles.
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### Two-Phase API Flow (Date-Based Generation)
+
+For date-based newsletter generation, the system uses a two-phase approach:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    Date-Based Newsletter Flow                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  Frontend: Pick date → POST /newsletter/generate {date}                     │
+│                           ↓                                                 │
+│                      Newsletter exists? → YES → Return cached               │
+│                           ↓ NO                                              │
+│                      POST /newsletter/fetch {date}                          │
+│                           ↓                                                 │
+│                      Show per-platform status                               │
+│                           ↓                                                 │
+│                      Success → auto-proceed to generate                     │
+│                      Partial/Failed → alert: Continue/Refetch/Cancel        │
+│                           ↓                                                 │
+│                      POST /newsletter/generate {date, force: true}          │
+│                           ↓                                                 │
+│                      Display newsletter                                     │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
 ### Data Flow
 
-1. **Fetch**: Retrieve articles from last 24 hours + previous newsletters for RAG
+1. **Fetch**: Retrieve articles from target date + previous newsletters for RAG
 2. **Rank**: AI evaluates and ranks articles by importance (top 20)
 3. **Deduplicate**: RAG compares against previous newsletters to find duplicates/updates
 4. **Generate**: Create professional newsletter with source attribution
@@ -102,14 +132,14 @@ class NewsletterState(TypedDict):
 
 ### Agent 1: Fetcher
 
-**Purpose**: Retrieve and prepare articles from the last 24 hours.
+**Purpose**: Retrieve and prepare articles from the target date.
 
 **System Prompt**:
 ```
 You are a content fetcher AI agent.
 
 Your role is to:
-1. Retrieve articles from the last 24 hours
+1. Retrieve articles from the target date
 2. Filter out low-quality or incomplete articles
 3. Prepare articles for ranking by extracting key information
 4. Organize articles by platform for easier processing
@@ -121,10 +151,12 @@ Focus on articles with:
 ```
 
 **Processing Steps**:
-1. Query ChromaDB for articles from last 24h
-2. Filter out articles with <50 characters content
-3. Fetch previous newsletters (last 7 days) for RAG context
-4. Update state with prepared articles
+1. Query ChromaDB for articles using fetch_date metadata (set by orchestrator)
+2. Fall back to timestamp-based query if no fetch_date articles found
+3. Fall back to last 24h for backward compatibility
+4. Filter out articles with <50 characters content
+5. Fetch previous newsletters (last 7 days) for RAG context
+6. Update state with prepared articles
 
 **Output**: State with `articles` and `previous_newsletters` populated
 
@@ -423,13 +455,64 @@ specification in `docs/frontend_spec.md`:
 
 ### Newsletter Generation
 
+#### POST /newsletter/fetch
+Fetch raw news articles for a specific date from all platforms.
+
+Runs all configured extractors with date filtering, stores results in
+ChromaDB, and returns per-platform fetch status.
+
+**Request Body:**
+```json
+{
+  "date": "2024-01-15"
+}
+```
+
+**Response:**
+```json
+{
+  "date": "2024-01-15",
+  "overall_status": "success",
+  "platforms": {
+    "youtube": {"status": "success", "count": 12},
+    "reddit": {"status": "success", "count": 8},
+    "substack": {"status": "success", "count": 5},
+    "twitter": {"status": "failed", "count": 0, "error": "Credentials not configured"}
+  },
+  "total_articles": 25
+}
+```
+
+**Status Values:**
+- `success`: All platforms fetched successfully
+- `partial`: Some platforms failed
+- `failed`: All platforms failed
+
+---
+
 #### POST /newsletter/generate
-Trigger AI agent-based newsletter generation for the last 24 hours.
+Generate a newsletter for a specific date.
+
+If a newsletter already exists for the date and force=False, returns the
+cached version. Otherwise runs the 4-agent AI pipeline.
+
+**Request Body:**
+```json
+{
+  "date": "2024-01-15",
+  "force": false
+}
+```
+
+**Parameters:**
+- `date`: Target date in YYYY-MM-DD format (within last 30 days)
+- `force`: If true, regenerate even if newsletter exists
 
 **Response:**
 ```json
 {
   "success": true,
+  "cached": false,
   "id": "newsletter_2024-01-15",
   "date": "2024-01-15",
   "newsletter": "# 📰 Daily Newsletter...\n...",
@@ -544,7 +627,105 @@ Get list of past newsletters (summary info only).
 ```
 
 ===============================================================================
-7. CONFIGURATION
+7. DATE-BASED NEWSLETTER GENERATION
+===============================================================================
+
+### Overview
+
+The system supports generating newsletters for specific dates within the
+last 30 days. This is useful for:
+- Catching up on missed days
+- Regenerating newsletters with updated content
+- Historical analysis of news coverage
+
+### Date Validation
+
+- Only dates within the last 30 days (inclusive of today) are supported
+- Date format: YYYY-MM-DD
+- Future dates are rejected
+
+### Two-Phase Flow
+
+The date-based generation uses a two-phase approach:
+
+**Phase 1: Fetch** (`POST /newsletter/fetch`)
+1. Run all extractors with date filtering
+2. Store articles with `fetch_date` metadata
+3. Return per-platform status
+
+**Phase 2: Generate** (`POST /newsletter/generate`)
+1. Check for existing newsletter (unless force=true)
+2. Fetch articles using fetch_date → timestamp → last-24h fallback
+3. Run 4-agent workflow
+4. Store and return newsletter
+
+### RSS Feed Limitations
+
+RSS feeds (YouTube, Reddit, Substack) don't support date queries. The system:
+1. Fetches broadly from RSS feeds
+2. Filters by timestamp after fetching
+3. Reports honestly if older dates have no matching articles
+
+### Frontend Integration
+
+The frontend provides:
+- **Date picker**: Select target date (last 30 days)
+- **Fetch status modal**: Shows per-platform fetch results
+- **Action buttons**: Continue, Retry, or Cancel based on status
+
+### Orchestration Module
+
+The `api/orchestrator.py` module coordinates the two-phase flow:
+
+```python
+from api.orchestrator import validate_date, fetch_for_date, generate_for_date
+
+# Validate date
+valid, error = validate_date("2024-01-15")
+
+# Fetch articles
+status = fetch_for_date("2024-01-15")
+
+# Generate newsletter
+result = generate_for_date("2024-01-15", force=False)
+```
+
+### Database Schema Updates
+
+Articles fetched for a specific date include `fetch_date` metadata:
+
+```json
+{
+  "id": "sha256_hash",
+  "document": "Article content...",
+  "metadata": {
+    "platform": "youtube",
+    "source_name": "Fireship",
+    "title": "Article Title",
+    "url": "https://...",
+    "timestamp": "2024-01-15T10:00:00",
+    "fetch_date": "2024-01-15",
+    "scraped_at": "2024-01-15T12:00:00"
+  }
+}
+```
+
+### Query Functions
+
+New database functions for date-based queries:
+
+```python
+from db.chroma_db import get_articles_by_date, get_articles_by_fetch_date
+
+# Get articles by publication timestamp
+articles = get_articles_by_date(collection, "2024-01-15")
+
+# Get articles by fetch_date metadata
+articles = get_articles_by_fetch_date(collection, "2024-01-15")
+```
+
+===============================================================================
+8. CONFIGURATION
 ===============================================================================
 
 ### Environment Variables
@@ -576,7 +757,7 @@ Different models can be used for different tasks:
 | `newsletters` | Newsletter history | Generated newsletters |
 
 ===============================================================================
-8. USAGE EXAMPLES
+9. USAGE EXAMPLES
 ===============================================================================
 
 ### Python API
@@ -589,19 +770,24 @@ from ai.newsletter import (
     get_newsletter_by_date
 )
 
-# Method 1: Convenience function
+# Method 1: Convenience function (today)
 result = generate_newsletter()
 print(result["newsletter"])
 
-# Method 2: Using class directly
-generator = NewsletterGenerator()
-result = generator.generate_newsletter()
+# Method 2: Generate for specific date
+result = generate_newsletter(target_date="2024-01-15")
+print(result["newsletter"])
 
-# Access source tracking
-for platform, articles in result["sources"].items():
-    print(f"\n{platform.upper()}:")
-    for article in articles:
-        print(f"  #{article['rank']} {article['source_name']}: {article['title']}")
+# Method 3: Using orchestrator for two-phase flow
+from api.orchestrator import fetch_for_date, generate_for_date
+
+# Phase 1: Fetch
+status = fetch_for_date("2024-01-15")
+print(f"Overall status: {status['overall_status']}")
+
+# Phase 2: Generate
+result = generate_for_date("2024-01-15", force=False)
+print(result["newsletter"])
 
 # Get previous newsletter
 latest = get_latest_newsletter()
@@ -615,8 +801,22 @@ newsletter = get_newsletter_by_date("2024-01-15")
 ### REST API
 
 ```bash
-# Generate newsletter
-curl -X POST http://localhost:8000/newsletter/generate
+# Two-phase date-based generation
+
+# Phase 1: Fetch articles for date
+curl -X POST http://localhost:8000/newsletter/fetch \
+  -H "Content-Type: application/json" \
+  -d '{"date": "2024-01-15"}'
+
+# Phase 2: Generate newsletter (check cache first)
+curl -X POST http://localhost:8000/newsletter/generate \
+  -H "Content-Type: application/json" \
+  -d '{"date": "2024-01-15", "force": false}'
+
+# Force regenerate
+curl -X POST http://localhost:8000/newsletter/generate \
+  -H "Content-Type: application/json" \
+  -d '{"date": "2024-01-15", "force": true}'
 
 # Get latest newsletter
 curl http://localhost:8000/newsletter/latest
@@ -654,7 +854,7 @@ crontab -e
 ```
 
 ===============================================================================
-9. CUSTOMIZATION
+10. CUSTOMIZATION
 ===============================================================================
 
 ### Modifying Agent Behavior
@@ -728,7 +928,7 @@ def _build_workflow(self) -> StateGraph:
 ```
 
 ===============================================================================
-10. TROUBLESHOOTING
+11. TROUBLESHOOTING
 ===============================================================================
 
 ### Common Issues
@@ -738,8 +938,12 @@ def _build_workflow(self) -> StateGraph:
 - **Solution**: Add `OPENROUTER_API_KEY` to `.env` file
 
 #### "No articles found"
-- **Cause**: No articles in database for last 24 hours
-- **Solution**: Run extraction first: `python scripts/run_all.py`
+- **Cause**: No articles in database for target date
+- **Solution**: Run extraction first: `python scripts/run_all.py` or use fetch endpoint
+
+#### "Date is older than 30 days"
+- **Cause**: Target date is outside the supported range
+- **Solution**: Only dates within the last 30 days are supported
 
 #### Newsletter generation fails
 - **Possible causes**:
@@ -761,6 +965,10 @@ def _build_workflow(self) -> StateGraph:
   ```python
   if similarity > 0.6:  # Lower threshold = more aggressive dedup
   ```
+
+#### Platform fetch failed for date
+- **Cause**: RSS feeds may not contain articles for older dates
+- **Solution**: This is expected behavior. Use "Continue" to proceed with available articles or "Retry" to attempt again
 
 ### Logging
 

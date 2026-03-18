@@ -81,11 +81,21 @@
   },
   
   "twitter": {
-    "_schema": "Twitter/X accounts use twscrape library (no official API). Requires account setup via twscrape CLI.",
+    "_schema": "Twitter/X accounts use Playwright for browser-based extraction with isolated session.",
     "_required_fields": ["name", "handle"],
     "_optional_fields": ["max_tweets"],
-    "_setup_required": "Run: twscrape add_accounts accounts.txt && twscrape login_accounts",
-    "_note": "Use throwaway accounts, not your main Twitter account",
+    "_setup_required": [
+      "1. Install Playwright: pip install playwright",
+      "2. Install browser: playwright install chromium",
+      "3. Add credentials to .env file (TWITTER_USERNAME, TWITTER_PASSWORD, TWITTER_EMAIL)",
+      "4. First run will require login (set headless=False in code for debugging)"
+    ],
+    "_notes": [
+      "Uses isolated browser profile at ./.playwright_twitter_profile",
+      "Session persists between runs after initial login",
+      "Set headless=False in TwitterPlaywrightExtractor for debugging login issues",
+      "Use a burner account - do not use your main Twitter account"
+    ],
     "sources": [
       {
         "name": "@elonmusk",

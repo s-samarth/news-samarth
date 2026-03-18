@@ -7,7 +7,9 @@ const state = {
     filteredArticles: [],
     currentFilter: 'all',
     searchQuery: '',
-    isLoading: false
+    isLoading: false,
+    selectedDate: new Date().toISOString().split('T')[0],
+    fetchStatus: null
 };
 
 // Platform Configuration
@@ -34,7 +36,16 @@ const elements = {
     viewLatestNewsletter: document.getElementById('viewLatestNewsletter'),
     newsletterModal: document.getElementById('newsletterModal'),
     closeModal: document.getElementById('closeModal'),
-    newsletterContent: document.getElementById('newsletterContent')
+    newsletterContent: document.getElementById('newsletterContent'),
+    newsletterDate: document.getElementById('newsletterDate'),
+    // Fetch status modal
+    fetchStatusModal: document.getElementById('fetchStatusModal'),
+    closeFetchModal: document.getElementById('closeFetchModal'),
+    fetchStatusContent: document.getElementById('fetchStatusContent'),
+    fetchStatusActions: document.getElementById('fetchStatusActions'),
+    fetchContinue: document.getElementById('fetchContinue'),
+    fetchRetry: document.getElementById('fetchRetry'),
+    fetchCancel: document.getElementById('fetchCancel')
 };
 
 // Utility Functions
@@ -62,6 +73,17 @@ function truncateText(text, maxLength = 280) {
 function capitalizeFirst(str) {
     if (!str) return '';
     return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+function initDatePicker() {
+    const today = new Date();
+    const minDate = new Date(today);
+    minDate.setDate(minDate.getDate() - 30);
+
+    elements.newsletterDate.max = today.toISOString().split('T')[0];
+    elements.newsletterDate.min = minDate.toISOString().split('T')[0];
+    elements.newsletterDate.value = today.toISOString().split('T')[0];
+    state.selectedDate = elements.newsletterDate.value;
 }
 
 // API Functions
@@ -98,19 +120,24 @@ async function fetchHealth() {
     }
 }
 
-async function generateNewsletter() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/newsletter/generate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ top_n: 15 })
-        });
-        if (!response.ok) throw new Error('Newsletter generation failed');
-        return await response.json();
-    } catch (error) {
-        console.error('Error generating newsletter:', error);
-        throw error;
-    }
+async function apiFetchNewsForDate(date) {
+    const response = await fetch(`${API_BASE_URL}/newsletter/fetch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date })
+    });
+    if (!response.ok) throw new Error('Fetch failed');
+    return await response.json();
+}
+
+async function apiGenerateNewsletter(date, force = false) {
+    const response = await fetch(`${API_BASE_URL}/newsletter/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date, force })
+    });
+    if (!response.ok) throw new Error('Newsletter generation failed');
+    return await response.json();
 }
 
 async function fetchLatestNewsletter() {
@@ -141,24 +168,24 @@ function renderFeedCard(article) {
                     <span class="source-name">${capitalizeFirst(article.source_name || 'Unknown')}</span>
                 </div>
             </div>
-            
+
             ${hasImage ? `
-                <img 
-                    src="${article.media_link}" 
+                <img
+                    src="${article.media_link}"
                     alt="${article.title || 'Article image'}"
                     class="card-image"
                     onerror="this.style.display='none'"
                     loading="lazy"
                 />
             ` : ''}
-            
+
             <div class="card-body">
                 <h3 class="card-title">
                     <a href="${article.url || '#'}" target="_blank" rel="noopener noreferrer">
                         ${article.title || 'Untitled'}
                     </a>
                 </h3>
-                
+
                 ${content ? `
                     <p class="card-content ${isLongContent ? 'truncated' : ''}" id="content-${article.id}">
                         ${isLongContent ? truncateText(content) : content}
@@ -170,7 +197,7 @@ function renderFeedCard(article) {
                     ` : ''}
                 ` : ''}
             </div>
-            
+
             <footer class="card-footer">
                 <span class="card-timestamp">
                     ${article.timestamp ? formatRelativeTime(article.timestamp) : 'Unknown time'}
@@ -188,63 +215,92 @@ function renderFeedCard(article) {
     `;
 }
 
-function renderNewsletterContent(newsletter) {
-    if (!newsletter || !newsletter.content) {
+function renderNewsletterContent(data) {
+    // Handle both new format (from generate endpoint) and legacy format
+    const content = data.newsletter || data.content || '';
+    if (!content) {
         return '<p>No newsletter content available.</p>';
     }
 
-    const sections = newsletter.content.split('\n\n').filter(s => s.trim());
+    const sections = content.split('\n\n').filter(s => s.trim());
     let html = '';
 
-    // Executive Summary
-    if (newsletter.executive_summary) {
-        html += `
-            <div class="newsletter-section">
-                <h3>📊 Executive Summary</h3>
-                <p>${newsletter.executive_summary}</p>
-            </div>
-        `;
-    }
-
-    // Main Content
+    // Main Content — render markdown-like sections
     html += `
         <div class="newsletter-section">
-            <h3>📰 Today's Top Stories</h3>
-            ${sections.map(section => `<p>${section}</p>`).join('')}
+            ${sections.map(section => {
+                // Convert markdown headers
+                let s = section;
+                s = s.replace(/^### (.+)$/gm, '<h4>$1</h4>');
+                s = s.replace(/^## (.+)$/gm, '<h3>$1</h3>');
+                s = s.replace(/^# (.+)$/gm, '<h2>$1</h2>');
+                s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+                s = s.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank">$1</a>');
+                return `<p>${s}</p>`;
+            }).join('')}
         </div>
     `;
 
-    // Sources
-    if (newsletter.sources && newsletter.sources.length > 0) {
+    // Metadata
+    const meta = data.metadata || {};
+    if (meta.date || meta.article_count) {
         html += `
-            <div class="newsletter-section">
-                <h3>🔗 Sources</h3>
-                <div class="newsletter-sources">
-                    ${newsletter.sources.map(source => {
-                        const platform = platformConfig[source.platform] || platformConfig.substack;
-                        return `
-                            <span class="newsletter-source-tag">
-                                <span class="platform-badge" style="background: ${platform.color}">${platform.badge}</span>
-                                ${source.source_name}
-                            </span>
-                        `;
-                    }).join('')}
-                </div>
+            <div class="newsletter-section" style="margin-top: 32px; padding-top: 20px; border-top: 1px solid var(--border-color);">
+                <p style="font-size: 0.85rem; color: var(--text-muted);">
+                    ${meta.date ? `Date: ${meta.date}` : ''}
+                    ${meta.article_count ? ` · ${meta.article_count} articles analyzed` : ''}
+                    ${meta.model_used ? ` · Model: ${meta.model_used}` : ''}
+                    ${data.cached ? ' · (cached)' : ''}
+                </p>
             </div>
         `;
     }
 
-    // Metadata
-    html += `
-        <div class="newsletter-section" style="margin-top: 32px; padding-top: 20px; border-top: 1px solid var(--border-color);">
-            <p style="font-size: 0.85rem; color: var(--text-muted);">
-                Generated on ${new Date(newsletter.timestamp).toLocaleString()} • 
-                ${newsletter.total_articles || 0} articles analyzed • 
-                ${newsletter.top_stories || 0} top stories selected
-            </p>
+    return html;
+}
+
+function renderFetchStatus(result) {
+    const platforms = result.platforms || {};
+    const statusColors = {
+        success: '#10b981',
+        failed: '#ef4444',
+        partial: '#f59e0b'
+    };
+
+    let html = `
+        <div class="fetch-status-summary">
+            <div class="fetch-status-badge" style="background: ${statusColors[result.overall_status] || '#6b7280'}">
+                ${result.overall_status === 'success' ? 'All platforms fetched successfully' :
+                  result.overall_status === 'partial' ? 'Some platforms failed' :
+                  'All platforms failed'}
+            </div>
+            <p class="fetch-total">Total articles fetched: <strong>${result.total_articles}</strong></p>
         </div>
+        <div class="fetch-platform-list">
     `;
 
+    for (const [platform, info] of Object.entries(platforms)) {
+        const pConfig = platformConfig[platform] || { color: '#6b7280', badge: '?', label: platform };
+        const statusIcon = info.status === 'success' ? '&#10003;' : '&#10007;';
+        const statusColor = info.status === 'success' ? '#10b981' : '#ef4444';
+
+        html += `
+            <div class="fetch-platform-row">
+                <div class="fetch-platform-info">
+                    <span class="platform-badge" style="background: ${pConfig.color}">${pConfig.badge}</span>
+                    <span class="fetch-platform-name">${pConfig.label}</span>
+                </div>
+                <div class="fetch-platform-result">
+                    <span style="color: ${statusColor}; font-weight: 600;">${statusIcon} ${info.status}</span>
+                    <span class="fetch-platform-count">${info.count} articles</span>
+                </div>
+                ${info.error ? `<div class="fetch-platform-error">${info.error}</div>` : ''}
+                ${info.note ? `<div class="fetch-platform-note">${info.note}</div>` : ''}
+            </div>
+        `;
+    }
+
+    html += '</div>';
     return html;
 }
 
@@ -252,7 +308,7 @@ function renderNewsletterContent(newsletter) {
 function toggleContent(articleId, fullLength) {
     const contentEl = document.getElementById(`content-${articleId}`);
     const btn = contentEl.nextElementSibling;
-    
+
     if (contentEl.classList.contains('truncated')) {
         contentEl.classList.remove('truncated');
         btn.textContent = 'Show Less';
@@ -279,7 +335,6 @@ function shareArticle(title, url) {
 }
 
 function showToast(message) {
-    // Simple toast notification
     const toast = document.createElement('div');
     toast.style.cssText = `
         position: fixed;
@@ -294,7 +349,7 @@ function showToast(message) {
     `;
     toast.textContent = message;
     document.body.appendChild(toast);
-    
+
     setTimeout(() => {
         toast.remove();
     }, 3000);
@@ -303,33 +358,30 @@ function showToast(message) {
 // Filter Functions
 function filterArticles(platform) {
     state.currentFilter = platform;
-    
-    // Update active button
+
     elements.filterBtns.forEach(btn => {
         btn.classList.toggle('active', btn.dataset.platform === platform);
     });
-    
-    // Filter articles
+
     if (platform === 'all') {
         state.filteredArticles = [...state.articles];
     } else {
         state.filteredArticles = state.articles.filter(a => a.platform === platform);
     }
-    
-    // Update subtitle
+
     if (platform === 'all') {
         elements.feedSubtitle.textContent = 'Latest news from all sources';
     } else {
         elements.feedSubtitle.textContent = `Showing ${platformConfig[platform]?.label || platform} articles`;
     }
-    
+
     renderFeed();
 }
 
 function searchArticlesHandler() {
     const query = elements.searchInput.value.trim();
     state.searchQuery = query;
-    
+
     if (query) {
         performSearch(query);
     } else {
@@ -359,7 +411,7 @@ function renderFeed() {
         elements.loadingSpinner.style.display = 'none';
         return;
     }
-    
+
     elements.emptyState.style.display = 'none';
     elements.feedGrid.innerHTML = state.filteredArticles.map(renderFeedCard).join('');
 }
@@ -381,26 +433,134 @@ function closeNewsletterModal() {
     document.body.style.overflow = '';
 }
 
+// Fetch Status Modal
+function openFetchStatusModal() {
+    elements.fetchStatusModal.classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeFetchStatusModal() {
+    elements.fetchStatusModal.classList.remove('active');
+    elements.fetchStatusActions.style.display = 'none';
+    document.body.style.overflow = '';
+}
+
+// Two-Phase Newsletter Generation Flow
 async function handleGenerateNewsletter() {
+    const date = elements.newsletterDate.value;
+    if (!date) {
+        showToast('Please select a date.');
+        return;
+    }
+    state.selectedDate = date;
+
+    // Phase 1: Try generating (will return cached if exists)
     openNewsletterModal();
     elements.newsletterContent.innerHTML = `
         <div class="loading-spinner">
             <div class="spinner"></div>
-            <p>Generating your personalized newsletter...</p>
+            <p>Checking for existing newsletter for ${date}...</p>
+        </div>
+    `;
+
+    try {
+        const result = await apiGenerateNewsletter(date, false);
+
+        if (result.success && result.cached) {
+            // Newsletter already exists — show it
+            elements.newsletterContent.innerHTML = renderNewsletterContent(result);
+            showToast('Loaded cached newsletter.');
+            return;
+        }
+
+        if (result.success && !result.cached) {
+            // Generated on the fly (articles were already in DB)
+            elements.newsletterContent.innerHTML = renderNewsletterContent(result);
+            showToast('Newsletter generated successfully!');
+            return;
+        }
+
+        // If generation failed (likely no articles), proceed to fetch phase
+        closeNewsletterModal();
+    } catch (error) {
+        // Generation failed — need to fetch first
+        closeNewsletterModal();
+    }
+
+    // Phase 2: Fetch news for the date
+    await startFetchPhase(date);
+}
+
+async function startFetchPhase(date) {
+    openFetchStatusModal();
+    elements.fetchStatusActions.style.display = 'none';
+    elements.fetchStatusContent.innerHTML = `
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p>Fetching news for ${date} from all platforms...</p>
             <p style="font-size: 0.85rem; margin-top: 8px; color: var(--text-muted);">
-                This may take a minute as AI agents analyze and rank your news
+                This may take a moment as we scrape multiple sources
             </p>
         </div>
     `;
-    
+
     try {
-        const newsletter = await generateNewsletter();
-        elements.newsletterContent.innerHTML = renderNewsletterContent(newsletter);
-        showToast('Newsletter generated successfully!');
+        const result = await apiFetchNewsForDate(date);
+        state.fetchStatus = result;
+
+        // Show status
+        elements.fetchStatusContent.innerHTML = renderFetchStatus(result);
+
+        if (result.overall_status === 'success') {
+            // Auto-proceed to generation
+            closeFetchStatusModal();
+            await proceedToGenerate(date);
+        } else {
+            // Show action buttons for partial/failed
+            elements.fetchStatusActions.style.display = 'flex';
+        }
+    } catch (error) {
+        elements.fetchStatusContent.innerHTML = `
+            <div class="empty-state">
+                <span class="empty-icon">&#10007;</span>
+                <h3>Fetch Failed</h3>
+                <p>${error.message || 'Could not fetch news. Is the API running?'}</p>
+            </div>
+        `;
+        elements.fetchStatusActions.style.display = 'flex';
+    }
+}
+
+async function proceedToGenerate(date) {
+    openNewsletterModal();
+    elements.newsletterContent.innerHTML = `
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p>Generating newsletter for ${date}...</p>
+            <p style="font-size: 0.85rem; margin-top: 8px; color: var(--text-muted);">
+                AI agents are analyzing and ranking your news
+            </p>
+        </div>
+    `;
+
+    try {
+        const result = await apiGenerateNewsletter(date, true);
+        if (result.success) {
+            elements.newsletterContent.innerHTML = renderNewsletterContent(result);
+            showToast('Newsletter generated successfully!');
+        } else {
+            elements.newsletterContent.innerHTML = `
+                <div class="empty-state">
+                    <span class="empty-icon">&#10007;</span>
+                    <h3>Generation Failed</h3>
+                    <p>${result.error || 'Please try again later.'}</p>
+                </div>
+            `;
+        }
     } catch (error) {
         elements.newsletterContent.innerHTML = `
             <div class="empty-state">
-                <span class="empty-icon">❌</span>
+                <span class="empty-icon">&#10007;</span>
                 <h3>Generation Failed</h3>
                 <p>${error.message || 'Please try again later.'}</p>
             </div>
@@ -416,15 +576,15 @@ async function handleViewLatestNewsletter() {
             <p>Loading latest newsletter...</p>
         </div>
     `;
-    
+
     try {
         const newsletter = await fetchLatestNewsletter();
-        if (newsletter && newsletter.content) {
+        if (newsletter && newsletter.success) {
             elements.newsletterContent.innerHTML = renderNewsletterContent(newsletter);
         } else {
             elements.newsletterContent.innerHTML = `
                 <div class="empty-state">
-                    <span class="empty-icon">📭</span>
+                    <span class="empty-icon">&#128237;</span>
                     <h3>No Newsletter Found</h3>
                     <p>Generate a new newsletter to get started!</p>
                 </div>
@@ -433,7 +593,7 @@ async function handleViewLatestNewsletter() {
     } catch (error) {
         elements.newsletterContent.innerHTML = `
             <div class="empty-state">
-                <span class="empty-icon">❌</span>
+                <span class="empty-icon">&#10007;</span>
                 <h3>Failed to Load</h3>
                 <p>${error.message || 'Please try again later.'}</p>
             </div>
@@ -457,7 +617,8 @@ async function updateHealthStatus() {
 // Initialize App
 async function initApp() {
     setLoading(true);
-    
+    initDatePicker();
+
     try {
         const articles = await fetchFeed();
         state.articles = articles;
@@ -471,49 +632,74 @@ async function initApp() {
     } finally {
         setLoading(false);
     }
-    
-    // Update health status
+
     updateHealthStatus();
-    
-    // Set up periodic health checks
     setInterval(updateHealthStatus, 30000);
 }
 
 // Event Listeners
 document.addEventListener('DOMContentLoaded', () => {
-    // Initialize app
     initApp();
-    
+
     // Filter buttons
     elements.filterBtns.forEach(btn => {
         btn.addEventListener('click', () => filterArticles(btn.dataset.platform));
     });
-    
+
     // Search
     elements.searchBtn.addEventListener('click', searchArticlesHandler);
     elements.searchInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') searchArticlesHandler();
     });
-    
+
     // Refresh
     elements.refreshBtn.addEventListener('click', () => {
         initApp();
         showToast('Feed refreshed!');
     });
-    
-    // Newsletter
+
+    // Newsletter date picker
+    elements.newsletterDate.addEventListener('change', (e) => {
+        state.selectedDate = e.target.value;
+    });
+
+    // Newsletter buttons
     elements.generateNewsletter.addEventListener('click', handleGenerateNewsletter);
     elements.viewLatestNewsletter.addEventListener('click', handleViewLatestNewsletter);
-    
-    // Modal
+
+    // Newsletter modal
     elements.closeModal.addEventListener('click', closeNewsletterModal);
     elements.newsletterModal.addEventListener('click', (e) => {
         if (e.target === elements.newsletterModal) closeNewsletterModal();
     });
-    
+
+    // Fetch status modal
+    elements.closeFetchModal.addEventListener('click', closeFetchStatusModal);
+    elements.fetchStatusModal.addEventListener('click', (e) => {
+        if (e.target === elements.fetchStatusModal) closeFetchStatusModal();
+    });
+
+    // Fetch status action buttons
+    elements.fetchContinue.addEventListener('click', () => {
+        closeFetchStatusModal();
+        proceedToGenerate(state.selectedDate);
+    });
+
+    elements.fetchRetry.addEventListener('click', () => {
+        startFetchPhase(state.selectedDate);
+    });
+
+    elements.fetchCancel.addEventListener('click', () => {
+        closeFetchStatusModal();
+        showToast('Operation cancelled.');
+    });
+
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') closeNewsletterModal();
+        if (e.key === 'Escape') {
+            closeNewsletterModal();
+            closeFetchStatusModal();
+        }
         if (e.key === '/' && !e.ctrlKey && !e.metaKey) {
             e.preventDefault();
             elements.searchInput.focus();

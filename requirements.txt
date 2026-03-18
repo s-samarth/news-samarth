@@ -5,6 +5,7 @@ python-dotenv>=1.0.0
 feedparser>=6.0.0
 youtube-transcript-api>=0.6.0
 twscrape>=0.12.0
+playwright>=1.40.0
 
 # API
 fastapi>=0.110.0

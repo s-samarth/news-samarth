@@ -30,6 +30,7 @@ import chromadb
 from chromadb.api import Collection
 
 from config import config
+from db.timezone_utils import get_now, get_today, get_24h_ago
 
 
 def get_chroma_client() -> chromadb.PersistentClient:
@@ -100,14 +101,15 @@ def _generate_doc_id(url: str) -> str:
 
 def upsert_articles(
     collection: Collection,
-    articles: List[Dict[str, Any]]
+    articles: List[Dict[str, Any]],
+    fetch_date: Optional[str] = None
 ) -> int:
     """
     Insert or update articles in the collection.
-    
+
     Uses upsert semantics: if an article with the same URL exists, it's updated;
     otherwise, it's inserted. This prevents duplicates while allowing content updates.
-    
+
     Args:
         collection: ChromaDB collection instance
         articles: List of article dictionaries with keys:
@@ -118,60 +120,51 @@ def upsert_articles(
             - content_text (str): Full content (transcript, article text, etc.)
             - timestamp (str): ISO 8601 publication timestamp
             - media_link (str): Image/thumbnail URL
-            
+        fetch_date: Optional date (YYYY-MM-DD) the articles were fetched for.
+                    Used to associate articles with a specific newsletter date.
+
     Returns:
-        int: Number of new articles added (not updates)
-        
-    Example:
-        >>> articles = [
-        ...     {
-        ...         "url": "https://youtube.com/watch?v=abc",
-        ...         "platform": "youtube",
-        ...         "source_name": "Fireship",
-        ...         "title": "100 Seconds of AI",
-        ...         "content_text": "Full transcript here...",
-        ...         "timestamp": "2024-01-15T10:00:00",
-        ...         "media_link": "https://img.youtube.com/..."
-        ...     }
-        ... ]
-        >>> count = upsert_articles(collection, articles)
+        int: Number of articles upserted
     """
     if not articles:
         return 0
-    
+
     ids = []
     documents = []
     metadatas = []
-    
+
     for article in articles:
         url = article.get("url")
         if not url:
             continue
-            
+
         doc_id = _generate_doc_id(url)
         ids.append(doc_id)
-        
+
         # Full content stored as the document
         documents.append(article.get("content_text") or article.get("title") or "")
-        
+
         # Metadata for filtering and display
-        metadatas.append({
+        metadata = {
             "platform": article.get("platform", "unknown"),
             "source_name": article.get("source_name", "unknown"),
             "title": article.get("title", ""),
             "url": url,
-            "timestamp": article.get("timestamp", datetime.now().isoformat()),
+            "timestamp": article.get("timestamp", get_now().isoformat()),
             "media_link": article.get("media_link", ""),
-            "scraped_at": datetime.now().isoformat()
-        })
-    
+            "scraped_at": get_now().isoformat()
+        }
+        if fetch_date:
+            metadata["fetch_date"] = fetch_date
+        metadatas.append(metadata)
+
     # Upsert: insert or update if exists
     collection.upsert(
         ids=ids,
         documents=documents,
         metadatas=metadatas
     )
-    
+
     return len(ids)
 
 
@@ -251,6 +244,8 @@ def get_articles_last_24h(
     in the project requirements. Filters articles by timestamp to only include
     content published in the last 24 hours.
     
+    Uses configured timezone for "now" calculation.
+    
     Args:
         collection: ChromaDB collection instance
         platform: Optional platform filter
@@ -263,8 +258,8 @@ def get_articles_last_24h(
         >>> result = get_articles_last_24h(collection)
         >>> print(f"Found {result['total']} articles in last 24 hours")
     """
-    # Calculate 24 hours ago in ISO format
-    yesterday = (datetime.now() - timedelta(hours=24)).isoformat()
+    # Calculate 24 hours ago in ISO format using configured timezone
+    yesterday = get_24h_ago().isoformat()
     
     # Build where clause with timestamp filter
     where = {
@@ -296,6 +291,108 @@ def get_articles_last_24h(
     # Sort by timestamp (newest first)
     items.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
     
+    return {
+        "total": len(items),
+        "items": items
+    }
+
+
+def get_articles_by_date(
+    collection: Collection,
+    target_date: str,
+    platform: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Get all articles whose publication timestamp falls on a specific date.
+
+    Args:
+        collection: ChromaDB collection instance
+        target_date: Date string in YYYY-MM-DD format
+        platform: Optional platform filter
+
+    Returns:
+        dict: Response with "total" count and "items" list
+    """
+    # Build where clause: timestamp between start and end of day
+    date_start = f"{target_date}T00:00:00"
+    date_end = f"{target_date}T23:59:59"
+
+    where = {
+        "$and": [
+            {"timestamp": {"$gte": date_start}},
+            {"timestamp": {"$lte": date_end}}
+        ]
+    }
+
+    if platform:
+        where["$and"].append({"platform": platform})
+
+    results = collection.get(
+        where=where,
+        include=["documents", "metadatas"]
+    )
+
+    items = []
+    for i, doc_id in enumerate(results["ids"]):
+        metadata = results["metadatas"][i] if results["metadatas"] else {}
+        # Only include actual articles (not summaries/newsletters)
+        if metadata.get("type") in ("summary", "newsletter"):
+            continue
+        items.append({
+            "id": doc_id,
+            "content_text": results["documents"][i] if results["documents"] else "",
+            **metadata
+        })
+
+    items.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+
+    return {
+        "total": len(items),
+        "items": items
+    }
+
+
+def get_articles_by_fetch_date(
+    collection: Collection,
+    fetch_date: str,
+    platform: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Get all articles that were fetched for a specific date.
+
+    Uses the fetch_date metadata field set during date-targeted extraction.
+
+    Args:
+        collection: ChromaDB collection instance
+        fetch_date: Date string in YYYY-MM-DD format
+        platform: Optional platform filter
+
+    Returns:
+        dict: Response with "total" count and "items" list
+    """
+    where = {"fetch_date": fetch_date}
+
+    if platform:
+        where = {"$and": [{"fetch_date": fetch_date}, {"platform": platform}]}
+
+    results = collection.get(
+        where=where,
+        include=["documents", "metadatas"]
+    )
+
+    items = []
+    for i, doc_id in enumerate(results["ids"]):
+        metadata = results["metadatas"][i] if results["metadatas"] else {}
+        if metadata.get("type") in ("summary", "newsletter"):
+            continue
+        items.append({
+            "id": doc_id,
+            "content_text": results["documents"][i] if results["documents"] else "",
+            **metadata
+        })
+
+    items.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+
     return {
         "total": len(items),
         "items": items
@@ -390,6 +487,7 @@ def delete_old_articles(
     Delete articles older than specified days.
     
     Useful for managing database size by removing old content.
+    Uses configured timezone for "now" calculation.
     
     Args:
         collection: ChromaDB collection instance
@@ -402,7 +500,7 @@ def delete_old_articles(
         >>> deleted = delete_old_articles(collection, days_old=30)
         >>> print(f"Deleted {deleted} old articles")
     """
-    cutoff = (datetime.now() - timedelta(days=days_old)).isoformat()
+    cutoff = (get_now() - timedelta(days=days_old)).isoformat()
     
     # Get old articles
     old_articles = collection.get(

@@ -160,11 +160,16 @@ conda activate newsfeed
    pip install -r requirements.txt
    ```
 
-3. Wait for installation to complete (may take 2-5 minutes)
-
-4. Verify installation:
+3. Install Playwright browser (required for Twitter extraction):
    ```bash
-   pip list | grep -E "chromadb|fastapi|langchain"
+   playwright install chromium
+   ```
+
+4. Wait for installation to complete (may take 2-5 minutes)
+
+5. Verify installation:
+   ```bash
+   pip list | grep -E "chromadb|fastapi|langchain|playwright"
    ```
    You should see these packages listed.
 
@@ -224,6 +229,12 @@ OpenRouter provides access to AI models (Claude, GPT-4, etc.) for summarization 
 Replace the placeholder values with your actual keys:
 
 ```env
+# Twitter/X (Playwright-based extraction)
+# Use a burner account - credentials stored in isolated browser profile
+TWITTER_USERNAME=your_burner_username
+TWITTER_PASSWORD=your_burner_password
+TWITTER_EMAIL=your_email_for_verification  # Optional, for verification screens
+
 # OpenRouter API Key (for AI features)
 OPENROUTER_API_KEY=sk-or-...
 OPENROUTER_MODEL=anthropic/claude-3.5-sonnet
@@ -233,6 +244,7 @@ OPENROUTER_MODEL=anthropic/claude-3.5-sonnet
 - Replace `sk-or-...` with your OpenRouter API key
 - Keep `OPENROUTER_MODEL` as is (or change to another model)
 - **Note**: YouTube now uses RSS feeds (no API key required)
+- **Twitter**: Uses Playwright with isolated browser session - use a burner account
 
 ### Step 3: Save the File
 
@@ -431,80 +443,56 @@ You should see your configured sources printed.
 
 ## 11. Set Up Twitter/X Accounts
 
-Twitter requires account credentials for scraping (no official API needed).
+Twitter uses Playwright for browser-based extraction with strict session isolation.
 
-### Step 1: Create Twitter Accounts
+### Step 1: Create a Burner Twitter Account
 
-**Important**: Use throwaway/dummy accounts, not your main account.
+**Important**: Use a throwaway/dummy account, not your main account.
 
-1. Create 1-3 Twitter accounts:
+1. Create a Twitter account:
    - Go to [twitter.com](https://twitter.com)
    - Click "Create account"
-   - Use temporary email addresses (e.g., from [temp-mail.org](https://temp-mail.org))
+   - Use a temporary email address (e.g., from [temp-mail.org](https://temp-mail.org))
    - Complete phone verification if required
 
-2. Note down for each account:
+2. Note down:
    - Username (without @)
    - Password
-   - Email address
-   - Email password (if using temporary email)
+   - Email address (for verification screens)
 
-### Step 2: Create accounts.txt File
+### Step 2: Add Credentials to .env
 
-1. In the project directory, create a new file called `accounts.txt`
+Add your burner account credentials to the `.env` file:
 
-2. Add your accounts in this format (one per line):
-   ```
-   username1:password1:email1@email.com:email_password1
-   username2:password2:email2@email.com:email_password2
-   username3:password3:email3@email.com:email_password3
-   ```
-
-   Example:
-   ```
-   newsfeed_bot1:MyPassword123:temp1@mail.com:emailpass1
-   newsfeed_bot2:MyPassword456:temp2@mail.com:emailpass2
-   ```
-
-3. Save the file
-
-### Step 3: Add Accounts to twscrape
-
-```bash
-twscrape add_accounts accounts.txt
+```env
+TWITTER_USERNAME=your_burner_username
+TWITTER_PASSWORD=your_burner_password
+TWITTER_EMAIL=your_email_for_verification
 ```
 
-Expected output:
-```
-Added 2 accounts
-```
+### Step 3: First Run (Login)
 
-### Step 4: Log In Accounts
+The first time you run the Twitter extractor, it will:
+1. Open a browser (isolated from your main browser)
+2. Navigate to Twitter login page
+3. Log in with your credentials
+4. Handle email verification if prompted
+5. Save session to `.playwright_twitter_profile/`
 
-```bash
-twscrape login_accounts
-```
-
-This will:
-- Log in to each account
-- May prompt for 2FA codes if enabled
-- Store session cookies locally
-
-Expected output:
-```
-Logging in newsfeed_bot1... OK
-Logging in newsfeed_bot2... OK
+**For debugging**, you can run with visible browser:
+```python
+# In scripts/run_all.py or run_single.py, modify:
+"twitter": TwitterPlaywrightExtractor(headless=False)
 ```
 
-### Step 5: Verify Accounts
+### Step 4: Verify Session Persistence
 
-```bash
-twscrape list_accounts
-```
+After successful login:
+1. Session is saved in `.playwright_twitter_profile/`
+2. Future runs will reuse the session (no login needed)
+3. Session persists until Twitter invalidates it
 
-You should see your accounts listed with status "logged_in".
-
-**Note**: Twitter may temporarily lock accounts if they detect scraping. This is normal—just wait a few hours and try again.
+**Note**: If Twitter detects unusual activity, it may require re-login. Just run with `headless=False` to debug.
 
 ---
 
@@ -700,7 +688,7 @@ curl -X POST http://localhost:8000/summarize
 curl http://localhost:8000/summary/latest
 ```
 
-### Step 3: Generate a Newsletter
+### Step 3: Generate a Newsletter (Today)
 
 ```bash
 curl -X POST http://localhost:8000/newsletter/generate
@@ -720,6 +708,7 @@ curl -X POST http://localhost:8000/newsletter/generate
 ```json
 {
   "success": true,
+  "cached": false,
   "id": "newsletter_2024-01-15",
   "date": "2024-01-15",
   "newsletter": "# 📰 Daily AI Newsletter - January 15, 2024\n...",
@@ -734,23 +723,169 @@ curl -X POST http://localhost:8000/newsletter/generate
 }
 ```
 
-### Step 4: Get Latest Newsletter
+### Step 4: Generate Newsletter for Specific Date
+
+The system supports generating newsletters for any date within the last 30 days.
+
+**Phase 1: Fetch articles for the date**
+```bash
+curl -X POST http://localhost:8000/newsletter/fetch \
+  -H "Content-Type: application/json" \
+  -d '{"date": "2024-01-15"}'
+```
+
+**Response shows per-platform status:**
+```json
+{
+  "date": "2024-01-15",
+  "overall_status": "success",
+  "platforms": {
+    "youtube": {"status": "success", "count": 12},
+    "reddit": {"status": "success", "count": 8},
+    "substack": {"status": "success", "count": 5},
+    "twitter": {"status": "failed", "count": 0, "error": "Credentials not configured"}
+  },
+  "total_articles": 25
+}
+```
+
+**Phase 2: Generate newsletter**
+```bash
+curl -X POST http://localhost:8000/newsletter/generate \
+  -H "Content-Type: application/json" \
+  -d '{"date": "2024-01-15", "force": false}'
+```
+
+**Force regenerate (skip cache):**
+```bash
+curl -X POST http://localhost:8000/newsletter/generate \
+  -H "Content-Type: application/json" \
+  -d '{"date": "2024-01-15", "force": true}'
+```
+
+### Step 5: Get Latest Newsletter
 
 ```bash
 curl http://localhost:8000/newsletter/latest
 ```
 
-### Step 5: View in Frontend
+### Step 6: View in Frontend
 
 1. Open browser to `http://localhost:8000`
 2. Scroll to "AI Newsletter" section
-3. Click "Generate Newsletter" button
-4. Wait for generation (may take 30-60 seconds)
-5. View the generated newsletter
+3. Use the **date picker** to select a specific date (last 30 days)
+4. Click "Generate Newsletter" button
+5. If fetching is needed, a **fetch status modal** appears showing per-platform results
+6. Choose **Continue** (proceed with available), **Retry** (refetch failed), or **Cancel**
+7. Wait for generation (may take 30-60 seconds)
+8. View the generated newsletter
 
 ---
 
-## 16. Schedule Automatic Runs
+## 16. Database Management (Admin)
+
+The system includes admin endpoints for database management. These are useful for maintaining database health and cleaning up old data.
+
+### Check Database Health
+
+```bash
+curl http://localhost:8000/admin/health
+```
+
+**Response shows:**
+- Database integrity status
+- Article counts by platform
+- Date range of articles
+- Any issues or warnings
+- Timezone configuration
+
+### Scan for Data Quality Issues
+
+```bash
+curl "http://localhost:8000/admin/scan?sample_size=100"
+```
+
+**Response shows:**
+- Number of valid/invalid articles
+- Issues by type (missing fields, invalid timestamps, etc.)
+- Sample of problematic articles
+
+### Preview Cleanup (Dry Run)
+
+Before deleting old articles, preview what would be removed:
+
+```bash
+curl "http://localhost:8000/admin/cleanup/preview?days_old=30"
+```
+
+**Response shows:**
+- Number of articles that would be deleted
+- Cutoff date
+- List of articles to be deleted (with URLs and titles)
+
+### Execute Cleanup
+
+**Important:** Always run preview first!
+
+```bash
+curl -X POST "http://localhost:8000/admin/cleanup?days_old=30&dry_run=false&backup=true"
+```
+
+**Parameters:**
+- `days_old`: Delete articles older than this many days (default: 30)
+- `dry_run`: Set to `false` to actually delete (default: `true` for safety)
+- `backup`: Create backup before deletion (default: `true`)
+
+### Surgically Delete Articles
+
+Delete specific articles by URL:
+
+```bash
+# Delete single article
+curl -X DELETE "http://localhost:8000/admin/articles?url=https://example.com/bad-article&confirm=true"
+
+# Delete multiple articles
+curl -X DELETE "http://localhost:8000/admin/articles?urls=https://example.com/1,https://example.com/2&confirm=true"
+
+# Delete all articles from a platform
+curl -X DELETE "http://localhost:8000/admin/articles?platform=twitter&confirm=true"
+```
+
+**Important:** Must include `confirm=true` to actually delete.
+
+### Backup and Restore
+
+**Create backup:**
+```bash
+curl -X POST http://localhost:8000/admin/backup
+```
+
+**List backups:**
+```bash
+curl http://localhost:8000/admin/backups
+```
+
+**Restore from backup:**
+```bash
+curl -X POST "http://localhost:8000/admin/restore?backup_name=chroma_backup_20240115_183000.tar.gz&confirm=true"
+```
+
+**Note:** Restore creates a pre-restore backup automatically.
+
+### Check Timezone Configuration
+
+```bash
+curl http://localhost:8000/admin/timezone
+```
+
+**Response shows:**
+- Configured timezone
+- Current time in that timezone
+- UTC offset
+
+---
+
+## 17. Schedule Automatic Runs
 
 To run extraction automatically every day:
 
@@ -867,10 +1002,15 @@ python api/main.py --port 8001
 
 ### Issue: Twitter extraction fails
 
-**Solution**: Twitter API is unstable.
-1. Check account status: `twscrape list_accounts`
-2. Re-login if needed: `twscrape login_accounts`
-3. Wait a few hours if accounts are locked
+**Solution**: Playwright session may have expired.
+1. Run with `headless=False` to debug:
+   ```python
+   # In scripts/run_all.py or run_single.py:
+   "twitter": TwitterPlaywrightExtractor(headless=False)
+   ```
+2. Check if login is required
+3. Verify credentials in `.env` file
+4. Delete `.playwright_twitter_profile/` to force fresh login
 
 ### Issue: YouTube transcripts not available
 

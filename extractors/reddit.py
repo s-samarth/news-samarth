@@ -23,7 +23,7 @@ Example:
 
 import feedparser
 import re
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from .base import BaseExtractor
 
@@ -36,40 +36,71 @@ class RedditExtractor(BaseExtractor):
     Uses feedparser (same as Substack extractor) for consistency.
     """
     
-    def extract(self, sources: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    # Sort option to RSS URL path mapping
+    SORT_URL_MAP = {
+        "hot": "",
+        "new": "new/",
+        "top": "top/.rss?t=day",
+        "rising": "rising/",
+    }
+
+    def _build_rss_url(self, source: Dict[str, Any]) -> Optional[str]:
+        """
+        Build RSS URL from source config, supporting both rss_url and subreddit+sort fields.
+
+        Args:
+            source: Source configuration dict
+
+        Returns:
+            RSS URL string, or None if insufficient config
+        """
+        rss_url = source.get("rss_url")
+        if rss_url:
+            return rss_url
+
+        subreddit = source.get("subreddit")
+        if not subreddit:
+            return None
+
+        sort = source.get("sort", "hot")
+        sort_path = self.SORT_URL_MAP.get(sort, "")
+
+        if sort == "top":
+            return f"https://www.reddit.com/r/{subreddit}/{sort_path}"
+        else:
+            return f"https://www.reddit.com/r/{subreddit}/{sort_path}.rss"
+
+    def extract(self, sources: List[Dict[str, Any]], target_date: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Extract posts from configured subreddit RSS feeds.
-        
-        For each configured subreddit RSS feed, fetches posts and stores
-        the full post content.
-        
+
+        For each configured subreddit, fetches posts and stores the full post content.
+
         Args:
             sources: List of subreddit configurations with keys:
                 - name (str): Display name for the source
-                - rss_url (str): RSS feed URL (required)
+                - rss_url (str): RSS feed URL (option 1)
+                - subreddit (str): Subreddit name (option 2, used with sort)
+                - sort (str): Sort order - hot/new/top/rising (default: hot)
                 - limit (int): Max posts to fetch (default: 10)
-                
+            target_date: Optional date string (YYYY-MM-DD) to filter posts by publication date
+
         Returns:
-            List of article dictionaries with full content:
-            - platform: "reddit"
-            - source_name: Display name
-            - title: Post title
-            - content_text: Full post body
-            - url: Reddit permalink
-            - timestamp: Publication date (ISO 8601)
-            - media_link: Thumbnail URL (if available)
+            List of article dictionaries with full content
         """
         extracted_articles = []
-        
+
         for source in sources:
             name = source.get("name")
-            rss_url = source.get("rss_url")
-            limit = source.get("limit", 10)
-            
+            rss_url = self._build_rss_url(source)
+            # Fetch more when targeting a specific date
+            default_limit = 25 if target_date else 10
+            limit = source.get("limit", default_limit) if not target_date else max(source.get("limit", 10), 25)
+
             if not rss_url:
-                print(f"Warning: No RSS URL provided for source '{name}', skipping.")
+                print(f"Warning: No RSS URL or subreddit provided for source '{name}', skipping.")
                 continue
-                
+
             try:
                 articles = self._extract_feed(name, rss_url, limit)
                 extracted_articles.extend(articles)
@@ -84,8 +115,8 @@ class RedditExtractor(BaseExtractor):
                         extracted_articles.extend(articles)
                     except Exception as e2:
                         print(f"Fallback also failed: {e2}")
-                
-        return extracted_articles
+
+        return self._filter_by_date(extracted_articles, target_date)
     
     def _extract_feed(self, name: str, rss_url: str, limit: int) -> List[Dict[str, Any]]:
         """

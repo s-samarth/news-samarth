@@ -7,7 +7,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from config import config
 from db import init_db
-from extractors import SubstackExtractor, RedditExtractor, YouTubeExtractor, TwitterExtractor
+from extractors import SubstackExtractor, RedditExtractor, YouTubeExtractor, TwitterPlaywrightExtractor
 
 def main():
     parser = argparse.ArgumentParser(description="Run a single newsfeed extractor.")
@@ -21,7 +21,7 @@ def main():
         "substack": SubstackExtractor(),
         "reddit": RedditExtractor(),
         "youtube": YouTubeExtractor(),
-        "twitter": TwitterExtractor()
+        "twitter": TwitterPlaywrightExtractor()
     }
     
     extractor = platform_map[args.platform]

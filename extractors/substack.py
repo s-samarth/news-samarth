@@ -19,7 +19,7 @@ Example:
 
 import feedparser
 import re
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from .base import BaseExtractor
 
@@ -32,45 +32,39 @@ class SubstackExtractor(BaseExtractor):
     Extracts full article content for storage and analysis.
     """
     
-    def extract(self, sources: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def extract(self, sources: List[Dict[str, Any]], target_date: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Extract articles from Substack RSS feeds.
-        
+
         For each configured Substack publication, fetches the RSS feed
         and extracts full article content.
-        
+
         Args:
             sources: List of Substack configurations with keys:
                 - name (str): Display name for the publication
                 - rss_url (str): RSS feed URL (required)
-                
+            target_date: Optional date string (YYYY-MM-DD) to filter articles by publication date
+
         Returns:
-            List of article dictionaries with full content:
-            - platform: "substack"
-            - source_name: Publication name
-            - title: Article title
-            - content_text: Full article text (HTML stripped)
-            - url: Article URL
-            - timestamp: Publication date
-            - media_link: Thumbnail image URL (if available)
+            List of article dictionaries with full content
         """
         extracted_articles = []
-        
+
         for source in sources:
             name = source.get("name")
             url = source.get("rss_url")
-            
+
             if not url:
                 print(f"Warning: No RSS URL provided for source '{name}', skipping.")
                 continue
-                
+
             try:
                 articles = self._extract_feed(name, url)
                 extracted_articles.extend(articles)
             except Exception as e:
                 print(f"Error extracting from Substack {name}: {e}")
-                
-        return extracted_articles
+
+        return self._filter_by_date(extracted_articles, target_date)
     
     def _extract_feed(self, name: str, rss_url: str) -> List[Dict[str, Any]]:
         """

@@ -23,7 +23,9 @@ from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from typing import Optional
+from datetime import datetime
 import os
 
 from db.chroma_db import (
@@ -41,6 +43,18 @@ from db.chroma_db import (
     get_newsletter_sources,
     get_newsletter_updates
 )
+from db.health import check_database_integrity, scan_for_issues, get_database_stats
+from db.cleanup import (
+    run_cleanup,
+    create_backup,
+    list_backups,
+    restore_backup,
+    delete_article_by_url,
+    delete_articles_by_urls,
+    delete_articles_by_platform,
+    get_cleanup_preview
+)
+from db.timezone_utils import get_timezone_info
 from config import config
 
 app = FastAPI(
@@ -61,6 +75,14 @@ app.add_middleware(
 # Initialize ChromaDB connection
 client = get_chroma_client()
 collection = get_or_create_collection(client)
+
+# Request models for date-based endpoints
+class FetchRequest(BaseModel):
+    date: str  # YYYY-MM-DD
+
+class GenerateRequest(BaseModel):
+    date: str  # YYYY-MM-DD
+    force: bool = False
 
 # Get the frontend directory path
 FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend")
@@ -371,45 +393,42 @@ async def read_summary_sources(date: str):
 # Newsletter Endpoints (AI Agent-based)
 # =============================================================================
 
-@app.post("/newsletter/generate")
-async def trigger_newsletter_generation():
+@app.post("/newsletter/fetch")
+async def fetch_news_for_date(request: FetchRequest):
     """
-    Trigger AI agent-based newsletter generation for the last 24 hours.
-    
-    Uses a 4-agent LangGraph workflow:
-    1. Fetcher Agent: Retrieves articles from ChromaDB
-    2. Ranker Agent: Ranks articles by importance using AI
-    3. Deduplicator Agent: Identifies duplicates and updates using RAG
-    4. Generator Agent: Creates the final newsletter
-    
+    Fetch raw news articles for a specific date from all platforms.
+
+    Runs all configured extractors with date filtering, stores results in
+    ChromaDB, and returns per-platform fetch status so the frontend can
+    decide whether to proceed, retry, or cancel.
+
+    Request body:
+        date (str): Target date in YYYY-MM-DD format (within last 30 days)
+
     Returns:
-        - newsletter: Generated newsletter markdown
-        - metadata: Newsletter metadata (article counts, platforms, etc.)
-        - sources: Full source tracking data
-        - updates: Update tracking for previous stories
-        
-    Requires:
-        - OPENROUTER_API_KEY environment variable to be set
-        - Articles in the database from the last 24 hours
+        Per-platform status with article counts and overall status.
     """
-    try:
-        from ai.newsletter import generate_newsletter
-        
-        result = generate_newsletter()
-        
-        return {
-            "success": True,
-            "id": result["id"],
-            "date": result["date"],
-            "newsletter": result["newsletter"],
-            "metadata": result["metadata"],
-            "sources": result["sources"]
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
+    from api.orchestrator import fetch_for_date
+    return fetch_for_date(request.date)
+
+
+@app.post("/newsletter/generate")
+async def trigger_newsletter_generation(request: GenerateRequest = GenerateRequest(date=datetime.now().strftime("%Y-%m-%d"))):
+    """
+    Generate a newsletter for a specific date.
+
+    If a newsletter already exists for the date and force=False, returns the
+    cached version. Otherwise runs the 4-agent AI pipeline.
+
+    Request body:
+        date (str): Target date in YYYY-MM-DD format (within last 30 days)
+        force (bool): If True, regenerate even if newsletter exists
+
+    Returns:
+        Generated or cached newsletter with metadata and sources.
+    """
+    from api.orchestrator import generate_for_date
+    return generate_for_date(request.date, force=request.force)
 
 
 @app.get("/newsletter/latest")
@@ -595,6 +614,219 @@ async def read_newsletter_history(limit: int = Query(30, ge=1, le=90)):
         "success": True,
         "total": len(history),
         "newsletters": history
+    }
+
+
+# =============================================================================
+# Admin Endpoints (Database Management)
+# =============================================================================
+
+@app.get("/admin/health")
+async def admin_health_check():
+    """
+    Comprehensive database health check.
+    
+    Returns detailed information about database integrity,
+    including article counts, platform distribution, and any issues found.
+    """
+    integrity = check_database_integrity(collection)
+    stats = get_database_stats(collection)
+    
+    return {
+        "success": True,
+        "integrity": integrity,
+        "stats": stats,
+        "timezone": get_timezone_info()
+    }
+
+
+@app.get("/admin/scan")
+async def admin_scan_issues(sample_size: int = Query(100, ge=1, le=1000)):
+    """
+    Scan articles for data quality issues.
+    
+    Validates a sample of articles and reports any issues found.
+    
+    Args:
+        sample_size: Number of articles to sample (1-1000)
+    """
+    result = scan_for_issues(collection, sample_size=sample_size)
+    return {
+        "success": True,
+        **result
+    }
+
+
+@app.post("/admin/cleanup")
+async def admin_cleanup(
+    days_old: Optional[int] = Query(None, description="Days to keep (default: config value)"),
+    dry_run: bool = Query(True, description="Preview without deleting"),
+    backup: bool = Query(True, description="Create backup before deletion")
+):
+    """
+    Clean up old articles from the database.
+    
+    By default, runs in dry-run mode to preview what would be deleted.
+    Set dry_run=false to actually perform the cleanup.
+    
+    Args:
+        days_old: Delete articles older than this many days
+        dry_run: If True, only preview (default: True for safety)
+        backup: Create backup before deletion (default: True)
+    """
+    result = run_cleanup(
+        collection,
+        days_old=days_old,
+        dry_run=dry_run,
+        backup=backup
+    )
+    return result
+
+
+@app.get("/admin/cleanup/preview")
+async def admin_cleanup_preview(days_old: Optional[int] = Query(None)):
+    """
+    Preview what would be deleted by cleanup.
+    
+    Always runs in dry-run mode - no data is actually deleted.
+    
+    Args:
+        days_old: Delete articles older than this many days
+    """
+    result = get_cleanup_preview(collection, days_old=days_old)
+    return {
+        "success": True,
+        **result
+    }
+
+
+@app.delete("/admin/articles")
+async def admin_delete_articles(
+    url: Optional[str] = Query(None, description="Single URL to delete"),
+    urls: Optional[str] = Query(None, description="Comma-separated URLs to delete"),
+    platform: Optional[str] = Query(None, description="Delete all from platform"),
+    confirm: bool = Query(False, description="Confirm deletion")
+):
+    """
+    Surgically remove specific articles from the database.
+    
+    Must provide at least one of: url, urls, platform
+    Must set confirm=true to actually delete.
+    
+    Args:
+        url: Single URL to delete
+        urls: Comma-separated list of URLs to delete
+        platform: Delete all articles from this platform
+        confirm: Must be True to actually delete
+    """
+    if not confirm:
+        return {
+            "success": False,
+            "message": "Deletion cancelled - confirm=true required",
+            "hint": "Add ?confirm=true to actually delete"
+        }
+    
+    if not url and not urls and not platform:
+        return {
+            "success": False,
+            "message": "Must provide at least one of: url, urls, platform"
+        }
+    
+    results = {}
+    
+    if url:
+        deleted = delete_article_by_url(collection, url)
+        results["single_url"] = {"url": url, "deleted": deleted}
+    
+    if urls:
+        url_list = [u.strip() for u in urls.split(",") if u.strip()]
+        deleted_map = delete_articles_by_urls(collection, url_list)
+        results["multiple_urls"] = {
+            "requested": len(url_list),
+            "deleted": sum(1 for v in deleted_map.values() if v),
+            "details": deleted_map
+        }
+    
+    if platform:
+        count = delete_articles_by_platform(collection, platform)
+        results["platform"] = {"platform": platform, "deleted": count}
+    
+    return {
+        "success": True,
+        "results": results
+    }
+
+
+@app.post("/admin/backup")
+async def admin_create_backup():
+    """
+    Create a backup of the database.
+    
+    Creates a timestamped tar.gz archive of the ChromaDB directory.
+    """
+    try:
+        backup_path = create_backup()
+        return {
+            "success": True,
+            "message": "Backup created successfully",
+            "backup_path": str(backup_path),
+            "backup_name": backup_path.name
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Backup failed: {str(e)}"
+        }
+
+
+@app.get("/admin/backups")
+async def admin_list_backups():
+    """
+    List available database backups.
+    
+    Returns list of backups with metadata (filename, size, dates).
+    """
+    backups = list_backups()
+    return {
+        "success": True,
+        "total": len(backups),
+        "backups": backups
+    }
+
+
+@app.post("/admin/restore")
+async def admin_restore_backup(
+    backup_name: str = Query(..., description="Backup filename to restore"),
+    confirm: bool = Query(False, description="Confirm restore")
+):
+    """
+    Restore database from a backup.
+    
+    WARNING: This will replace the current database!
+    A pre-restore backup is automatically created.
+    
+    Args:
+        backup_name: Name of the backup file to restore
+        confirm: Must be True to actually restore
+    """
+    from pathlib import Path
+    
+    backup_path = config.backup_dir / backup_name
+    
+    result = restore_backup(backup_path, confirm=confirm)
+    return result
+
+
+@app.get("/admin/timezone")
+async def admin_timezone_info():
+    """
+    Get timezone configuration information.
+    
+    Returns current timezone settings and time information.
+    """
+    return {
+        "success": True,
+        **get_timezone_info()
     }
 
 

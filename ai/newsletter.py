@@ -57,7 +57,9 @@ from config import config
 from db.chroma_db import (
     get_chroma_client,
     get_or_create_collection,
-    get_articles_last_24h
+    get_articles_last_24h,
+    get_articles_by_fetch_date,
+    get_articles_by_date
 )
 
 
@@ -475,10 +477,16 @@ class NewsletterGenerator:
         print(f"{'='*60}")
         
         # =====================================================================
-        # FETCH ARTICLES FROM LAST 24 HOURS
+        # FETCH ARTICLES FOR TARGET DATE
         # =====================================================================
-        # Use existing function to get recent articles
-        result = get_articles_last_24h(self.collection)
+        # Try fetch_date first (set by orchestrator), fall back to timestamp-based,
+        # then fall back to last 24h for backward compatibility
+        target_date = state["date"]
+        result = get_articles_by_fetch_date(self.collection, target_date)
+        if result["total"] == 0:
+            result = get_articles_by_date(self.collection, target_date)
+        if result["total"] == 0:
+            result = get_articles_last_24h(self.collection)
         articles = result.get("items", [])
         
         # =====================================================================
@@ -1271,13 +1279,16 @@ Content: {article.get('content_text', 'No content')[:500]}
     # PUBLIC API
     # =========================================================================
     
-    def generate_newsletter(self) -> Dict[str, Any]:
+    def generate_newsletter(self, target_date: Optional[str] = None) -> Dict[str, Any]:
         """
-        Generate a newsletter for the last 24 hours.
-        
+        Generate a newsletter for a specific date (defaults to today).
+
         This is the main entry point for newsletter generation.
         Runs the complete 4-agent LangGraph workflow.
-        
+
+        Args:
+            target_date: Date in YYYY-MM-DD format. Defaults to today.
+
         Returns:
             Dictionary containing:
             - id: Newsletter ID
@@ -1285,17 +1296,12 @@ Content: {article.get('content_text', 'No content')[:500]}
             - newsletter: Full newsletter markdown
             - metadata: Newsletter metadata
             - sources: Source tracking data
-            
-        Example:
-            >>> generator = NewsletterGenerator()
-            >>> result = generator.generate_newsletter()
-            >>> print(result["newsletter"])
         """
-        today = datetime.now().strftime("%Y-%m-%d")
-        
+        target = target_date or datetime.now().strftime("%Y-%m-%d")
+
         # Initialize state
         initial_state: NewsletterState = {
-            "date": today,
+            "date": target,
             "articles": [],
             "ranked_articles": [],
             "new_stories": [],
@@ -1310,19 +1316,19 @@ Content: {article.get('content_text', 'No content')[:500]}
         # Run workflow
         print(f"\n{'#'*60}")
         print(f"# NEWSLETTER GENERATION STARTING")
-        print(f"# Date: {today}")
+        print(f"# Date: {target}")
         print(f"# Model: {self.model_name}")
         print(f"{'#'*60}")
-        
+
         result = self.workflow.invoke(initial_state)
-        
+
         print(f"\n{'#'*60}")
         print(f"# NEWSLETTER GENERATION COMPLETE")
         print(f"{'#'*60}\n")
-        
+
         return {
-            "id": f"newsletter_{today}",
-            "date": today,
+            "id": f"newsletter_{target}",
+            "date": target,
             "newsletter": result["newsletter"],
             "metadata": result["metadata"],
             "sources": result["sources_tracking"]
@@ -1333,22 +1339,20 @@ Content: {article.get('content_text', 'No content')[:500]}
 # CONVENIENCE FUNCTIONS
 # =============================================================================
 
-def generate_newsletter() -> Dict[str, Any]:
+def generate_newsletter(target_date: Optional[str] = None) -> Dict[str, Any]:
     """
-    Convenience function to generate a newsletter for the last 24 hours.
-    
+    Convenience function to generate a newsletter.
+
     Creates a NewsletterGenerator instance and runs the complete workflow.
-    
+
+    Args:
+        target_date: Date in YYYY-MM-DD format. Defaults to today.
+
     Returns:
         Dictionary with newsletter data
-        
-    Example:
-        >>> from ai.newsletter import generate_newsletter
-        >>> result = generate_newsletter()
-        >>> print(result["newsletter"])
     """
     generator = NewsletterGenerator()
-    return generator.generate_newsletter()
+    return generator.generate_newsletter(target_date=target_date)
 
 
 def get_latest_newsletter() -> Optional[Dict[str, Any]]:

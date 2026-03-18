@@ -85,5 +85,85 @@ class Config:
         """
         return os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
 
+    @property
+    def twitter_username(self) -> str:
+        """Twitter/X username for Playwright-based extraction."""
+        return os.getenv("TWITTER_USERNAME")
+
+    @property
+    def twitter_password(self) -> str:
+        """Twitter/X password for Playwright-based extraction."""
+        return os.getenv("TWITTER_PASSWORD")
+
+    @property
+    def twitter_email(self) -> str:
+        """Twitter/X email for verification (optional)."""
+        return os.getenv("TWITTER_EMAIL")
+
+    @property
+    def playwright_profile_dir(self) -> Path:
+        """
+        Playwright browser profile directory for Twitter extraction.
+        
+        This directory stores the isolated browser session data,
+        ensuring no cross-contamination with the main browser.
+        """
+        return BASE_DIR / ".playwright_twitter_profile"
+
+    # =========================================================================
+    # Timezone Configuration
+    # =========================================================================
+    
+    @property
+    def timezone(self) -> str:
+        """
+        Timezone for date calculations.
+        
+        Default: 'local' (uses system timezone)
+        Can be set to any valid timezone string (e.g., 'UTC', 'America/New_York')
+        """
+        return os.getenv("TIMEZONE", "local")
+
+    # =========================================================================
+    # Cleanup Configuration
+    # =========================================================================
+    
+    @property
+    def auto_cleanup_enabled(self) -> bool:
+        """
+        Enable automatic cleanup of old articles.
+        
+        Default: False (opt-in for safety)
+        """
+        return os.getenv("AUTO_CLEANUP_ENABLED", "false").lower() == "true"
+
+    @property
+    def auto_cleanup_days(self) -> int:
+        """
+        Number of days to keep articles.
+        
+        Default: 30
+        Articles older than this will be deleted during cleanup.
+        """
+        return int(os.getenv("AUTO_CLEANUP_DAYS", "30"))
+
+    @property
+    def auto_cleanup_on_startup(self) -> bool:
+        """
+        Run cleanup on server startup.
+        
+        Default: False (manual cleanup recommended)
+        """
+        return os.getenv("AUTO_CLEANUP_ON_STARTUP", "false").lower() == "true"
+
+    @property
+    def backup_dir(self) -> Path:
+        """
+        Directory for database backups.
+        
+        Default: db/backups/
+        """
+        return self.chroma_path.parent / "backups"
+
 # Global configuration instance
 config = Config()

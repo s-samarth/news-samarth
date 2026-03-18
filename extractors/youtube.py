@@ -19,7 +19,7 @@ Example:
 
 import feedparser
 import re
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from .base import BaseExtractor
 
@@ -32,13 +32,13 @@ class YouTubeExtractor(BaseExtractor):
     No API key required - uses native YouTube RSS feeds.
     """
     
-    def extract(self, sources: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def extract(self, sources: List[Dict[str, Any]], target_date: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Extract videos and transcripts from YouTube channels via RSS feeds.
-        
+
         For each configured channel, fetches the RSS feed and extracts
         video metadata and transcripts.
-        
+
         Args:
             sources: List of channel configurations with keys:
                 - name (str): Display name for the channel
@@ -46,37 +46,33 @@ class YouTubeExtractor(BaseExtractor):
                 - max_results (int): Max videos to fetch (default: 15)
                 - fetch_transcript (bool): Whether to fetch transcripts (default: True)
                 - filter_shorts (bool): Whether to filter out YouTube Shorts (default: True)
-                
+            target_date: Optional date string (YYYY-MM-DD) to filter videos by publication date
+
         Returns:
-            List of article dictionaries with full content:
-            - platform: "youtube"
-            - source_name: Channel display name
-            - title: Video title
-            - content_text: Full transcript or description
-            - url: Video URL
-            - timestamp: Publication date (ISO 8601)
-            - media_link: Thumbnail URL
+            List of article dictionaries with full content
         """
         extracted_articles = []
-        
+
         for source in sources:
             name = source.get("name")
             channel_id = source.get("channel_id")
-            max_results = source.get("max_results", 15)
+            # Fetch more when targeting a specific date to increase chances of finding matches
+            default_max = 50 if target_date else 15
+            max_results = source.get("max_results", default_max) if not target_date else max(source.get("max_results", 15), 50)
             fetch_transcript = source.get("fetch_transcript", True)
             filter_shorts = source.get("filter_shorts", True)
-            
+
             if not channel_id:
                 print(f"Warning: No channel_id provided for source '{name}', skipping.")
                 continue
-                
+
             try:
                 articles = self._extract_channel(name, channel_id, max_results, fetch_transcript, filter_shorts)
                 extracted_articles.extend(articles)
             except Exception as e:
                 print(f"Error extracting from YouTube channel {channel_id}: {e}")
-                
-        return extracted_articles
+
+        return self._filter_by_date(extracted_articles, target_date)
     
     def _extract_channel(
         self,

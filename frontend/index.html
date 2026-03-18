@@ -48,9 +48,13 @@
             <!-- Newsletter Section -->
             <div class="filter-section">
                 <h3 class="section-title">AI Newsletter</h3>
+                <div class="date-picker-group">
+                    <label for="newsletterDate">Select Date</label>
+                    <input type="date" id="newsletterDate" />
+                </div>
                 <button class="newsletter-btn" id="generateNewsletter">
                     <span>✨</span>
-                    <span>Generate Newsletter</span>
+                    <span>Generate News</span>
                 </button>
                 <button class="newsletter-btn secondary" id="viewLatestNewsletter">
                     <span>📄</span>
@@ -122,6 +126,22 @@
                     <div class="spinner"></div>
                     <p>Generating your personalized newsletter...</p>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Fetch Status Modal -->
+    <div class="modal" id="fetchStatusModal">
+        <div class="modal-content fetch-status-modal">
+            <div class="modal-header">
+                <h2>Fetch Status</h2>
+                <button class="modal-close" id="closeFetchModal">&times;</button>
+            </div>
+            <div class="modal-body" id="fetchStatusContent"></div>
+            <div class="modal-footer" id="fetchStatusActions" style="display: none;">
+                <button class="newsletter-btn" id="fetchContinue">Continue with Available Data</button>
+                <button class="newsletter-btn secondary" id="fetchRetry">Retry</button>
+                <button class="newsletter-btn secondary" id="fetchCancel">Cancel</button>
             </div>
         </div>
     </div>

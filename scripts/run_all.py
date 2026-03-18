@@ -31,7 +31,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from config import config
 from db.chroma_db import get_chroma_client, get_or_create_collection, upsert_articles
-from extractors import SubstackExtractor, RedditExtractor, YouTubeExtractor, TwitterExtractor
+from extractors import SubstackExtractor, RedditExtractor, YouTubeExtractor, TwitterPlaywrightExtractor
 
 # Setup logging
 logging.basicConfig(
@@ -78,7 +78,7 @@ def run_all():
         "substack": SubstackExtractor(),
         "reddit": RedditExtractor(),
         "youtube": YouTubeExtractor(),
-        "twitter": TwitterExtractor()
+        "twitter": TwitterPlaywrightExtractor()
     }
     
     total_new = 0
